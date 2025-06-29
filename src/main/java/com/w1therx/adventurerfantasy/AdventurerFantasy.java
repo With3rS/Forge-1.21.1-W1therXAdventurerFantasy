@@ -1,6 +1,7 @@
 package com.w1therx.adventurerfantasy;
 
 import com.mojang.logging.LogUtils;
+import com.w1therx.adventurerfantasy.effect.ModEffects;
 import com.w1therx.adventurerfantasy.item.ModCreativeModeTabs;
 import com.w1therx.adventurerfantasy.item.ModItems;
 import net.minecraftforge.api.distmarker.Dist;
@@ -38,6 +39,8 @@ public class AdventurerFantasy
         ModCreativeModeTabs.register(modEventBus);
 
         ModItems.register(modEventBus);
+
+        ModEffects.register(modEventBus);
 
         // Register the item to a creative tab
         modEventBus.addListener(this::addCreative);
