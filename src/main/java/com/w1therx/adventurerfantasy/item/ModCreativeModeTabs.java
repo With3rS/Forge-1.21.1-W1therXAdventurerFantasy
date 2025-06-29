@@ -13,7 +13,7 @@ public class ModCreativeModeTabs {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, AdventurerFantasy.MOD_ID);
 
-    public static final RegistryObject<CreativeModeTab> ELEMENTAL_INGREDIENTS_TAB = CREATIVE_MODE_TABS.register("elemental_ingredients_tab", () -> CreativeModeTab.builder().icon(()-> new ItemStack(ModItems.FIRE_LOGOS.get()))
+    public static final RegistryObject<CreativeModeTab> ELEMENTAL_INGREDIENTS_TAB = CREATIVE_MODE_TABS.register("elemental_ingredients_tab", () -> CreativeModeTab.builder().icon(()-> new ItemStack(ModItems.LOGOI_LOGOS.get()))
             .title(Component.translatable("creativetab.adventurerfantasy.elemental_ingredients"))
             .displayItems((itemDisplayParameters, output) -> {
 
@@ -31,6 +31,7 @@ public class ModCreativeModeTabs {
                 output.accept(ModItems.VOID_ESSENCE.get());
                 output.accept(ModItems.WATER_ESSENCE.get());
                 output.accept(ModItems.WIND_ESSENCE.get());
+                output.accept(ModItems.ESSENCES_ESSENCE.get());
 
                 output.accept(ModItems.BLIGHT_LOGOS.get());
                 output.accept(ModItems.DECAY_LOGOS.get());
@@ -45,7 +46,7 @@ public class ModCreativeModeTabs {
                 output.accept(ModItems.NATURE_LOGOS.get());
                 output.accept(ModItems.VOID_LOGOS.get());
                 output.accept(ModItems.WATER_LOGOS.get());
-                output.accept(ModItems.WIND_LOGOS.get());
+                output.accept(ModItems.LOGOI_LOGOS.get());
 
             }).build());
 

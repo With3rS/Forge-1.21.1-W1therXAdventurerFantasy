@@ -27,6 +27,9 @@ public class ModItemModelProvider extends ItemModelProvider {
         basicItem(ModItems.VOID_LOGOS.get());
         basicItem(ModItems.WATER_LOGOS.get());
         basicItem(ModItems.WIND_LOGOS.get());
+        basicItem(ModItems.LOGOI_LOGOS.get());
+        basicItem(ModItems.ESSENCES_ESSENCE.get());
+
 
     }
 }

@@ -185,6 +185,18 @@ public class ModItems {
             super.appendHoverText(pStack, pContext, pTooltipComponents, pTooltipFlag);
     }
 });
+    public static final RegistryObject<Item> ESSENCES_ESSENCE = ITEMS.register("essences_essence", () -> new Item(new Item.Properties()) {
+        @Override
+        public void appendHoverText(ItemStack pStack, TooltipContext pContext, List<Component> pTooltipComponents, TooltipFlag pTooltipFlag) {
+            super.appendHoverText(pStack, pContext, pTooltipComponents, pTooltipFlag);
+            if (Screen.hasShiftDown()) {
+                pTooltipComponents.add(Component.translatable("tooltip.adventurerfantasy.essences_essence_lore"));
+            } else {
+                pTooltipComponents.add(Component.translatable("tooltip.adventurerfantasy.item_info"));
+            }
+            super.appendHoverText(pStack, pContext, pTooltipComponents, pTooltipFlag);
+        }
+    });
 
     public static final RegistryObject<Item> BLIGHT_LOGOS = ITEMS.register("blight_logos", () -> new Item(new Item.Properties()));
     public static final RegistryObject<Item> DECAY_LOGOS = ITEMS.register("decay_logos", () -> new Item(new Item.Properties()));
@@ -200,6 +212,7 @@ public class ModItems {
     public static final RegistryObject<Item> VOID_LOGOS = ITEMS.register("void_logos", () -> new Item(new Item.Properties()));
     public static final RegistryObject<Item> WATER_LOGOS = ITEMS.register("water_logos", () -> new Item(new Item.Properties()));
     public static final RegistryObject<Item> WIND_LOGOS = ITEMS.register("wind_logos", () -> new Item(new Item.Properties()));
+    public static final RegistryObject<Item> LOGOI_LOGOS = ITEMS.register("logoi_logos", () -> new Item(new Item.Properties()));
 
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
