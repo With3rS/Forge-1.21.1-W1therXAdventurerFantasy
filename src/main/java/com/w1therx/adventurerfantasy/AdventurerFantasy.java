@@ -1,6 +1,7 @@
 package com.w1therx.adventurerfantasy;
 
 import com.mojang.logging.LogUtils;
+import com.w1therx.adventurerfantasy.block.ModBlocks;
 import com.w1therx.adventurerfantasy.effect.ModEffects;
 import com.w1therx.adventurerfantasy.item.ModCreativeModeTabs;
 import com.w1therx.adventurerfantasy.item.ModItems;
@@ -39,6 +40,8 @@ public class AdventurerFantasy
         ModCreativeModeTabs.register(modEventBus);
 
         ModItems.register(modEventBus);
+
+        ModBlocks.register(modEventBus);
 
         ModEffects.register(modEventBus);
 
