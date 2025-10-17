@@ -17,5 +17,4 @@ public class BlazingEffect extends MobEffect {
     @Override
     public boolean shouldApplyEffectTickThisTick(int pDuration, int pAmplifier) {
         return true;
-    }
-}
+    }}

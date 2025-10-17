@@ -1,12 +1,19 @@
 package com.w1therx.adventurerfantasy;
 
 import com.mojang.logging.LogUtils;
+import com.w1therx.adventurerfantasy.block.DivinitiesBlocks;
 import com.w1therx.adventurerfantasy.block.ModBlocks;
+import com.w1therx.adventurerfantasy.capability.*;
 import com.w1therx.adventurerfantasy.effect.ModEffects;
+import com.w1therx.adventurerfantasy.event.ModKeyBindings;
 import com.w1therx.adventurerfantasy.item.ModCreativeModeTabs;
 import com.w1therx.adventurerfantasy.item.ModItems;
+import com.w1therx.adventurerfantasy.network.ModNetworking;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.capabilities.Capability;
+import net.minecraftforge.common.capabilities.CapabilityManager;
+import net.minecraftforge.common.capabilities.CapabilityToken;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -27,6 +34,7 @@ public class AdventurerFantasy
     // Directly reference a slf4j logger
     private static final Logger LOGGER = LogUtils.getLogger();
 
+
     public AdventurerFantasy(FMLJavaModLoadingContext context)
     {
         IEventBus modEventBus = context.getModEventBus();
@@ -42,6 +50,9 @@ public class AdventurerFantasy
         ModItems.register(modEventBus);
 
         ModBlocks.register(modEventBus);
+        DivinitiesBlocks.register(modEventBus);
+
+        ModSounds.SOUND_EVENTS.register(modEventBus);
 
         ModEffects.register(modEventBus);
 
@@ -50,10 +61,18 @@ public class AdventurerFantasy
 
         // Register our mod's ForgeConfigSpec so that Forge can create and load the config file for us
         context.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+
+
+
     }
 
     private void commonSetup(final FMLCommonSetupEvent event)
     {
+        System.out.println("[DEBUG] Registering ModCapabilities Class");
+        ModCapabilities.register();
+
+        ModNetworking.register();
+
      }
 
     // Add the example block item to the building blocks tab
@@ -67,6 +86,10 @@ public class AdventurerFantasy
     {
 
     }
+
+
+
+
 
     // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
     @Mod.EventBusSubscriber(modid = MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)

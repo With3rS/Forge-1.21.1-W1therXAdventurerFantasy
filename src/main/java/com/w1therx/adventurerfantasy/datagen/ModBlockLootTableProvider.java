@@ -1,5 +1,6 @@
 package com.w1therx.adventurerfantasy.datagen;
 
+import com.w1therx.adventurerfantasy.block.DivinitiesBlocks;
 import com.w1therx.adventurerfantasy.block.ModBlocks;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.loot.BlockLootSubProvider;
@@ -21,26 +22,26 @@ public class ModBlockLootTableProvider extends BlockLootSubProvider {
 
     @Override
     protected void generate() {
-        dropSelf(ModBlocks.BLIGHT_DIVINITY.get());
-        dropSelf(ModBlocks.DECAY_DIVINITY.get());
-        dropSelf(ModBlocks.EARTH_DIVINITY.get());
-        dropSelf(ModBlocks.ECHO_DIVINITY.get());
-        dropSelf(ModBlocks.FIRE_DIVINITY.get());
-        dropSelf(ModBlocks.ICE_DIVINITY.get());
-        dropSelf(ModBlocks.IMAGINATION_DIVINITY.get());
-        dropSelf(ModBlocks.LAVA_DIVINITY.get());
-        dropSelf(ModBlocks.LIGHTNING_DIVINITY.get());
-        dropSelf(ModBlocks.MOTION_DIVINITY.get());
-        dropSelf(ModBlocks.NATURE_DIVINITY.get());
-        dropSelf(ModBlocks.VOID_DIVINITY.get());
-        dropSelf(ModBlocks.WATER_DIVINITY.get());
-        dropSelf(ModBlocks.WIND_DIVINITY.get());
-        dropSelf(ModBlocks.DIVINITIES_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.BLIGHT_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.DECAY_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.EARTH_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.ECHO_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.FIRE_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.ICE_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.IMAGINATION_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.LAVA_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.LIGHTNING_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.MOTION_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.NATURE_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.VOID_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.WATER_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.WIND_DIVINITY.get());
+        dropSelf(DivinitiesBlocks.DIVINITIES_DIVINITY.get());
 
     }
 
     @Override
     protected Iterable<Block> getKnownBlocks() {
-        return ModBlocks.BLOCKS.getEntries().stream().map(RegistryObject::get)::iterator;
+        return DivinitiesBlocks.BLOCKS.getEntries().stream().map(RegistryObject::get)::iterator;
     }
 }

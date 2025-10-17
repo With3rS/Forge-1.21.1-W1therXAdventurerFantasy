@@ -1,6 +1,7 @@
 package com.w1therx.adventurerfantasy.datagen;
 
 import com.w1therx.adventurerfantasy.AdventurerFantasy;
+import com.w1therx.adventurerfantasy.block.DivinitiesBlocks;
 import com.w1therx.adventurerfantasy.block.ModBlocks;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
@@ -19,21 +20,21 @@ public class ModBlockTagProvider extends BlockTagsProvider {
     @Override
     protected void addTags(HolderLookup.Provider pProvider) {
         tag(BlockTags.MINEABLE_WITH_PICKAXE)
-            .add(ModBlocks.BLIGHT_DIVINITY.get())
-            .add(ModBlocks.DECAY_DIVINITY.get())
-                .add(ModBlocks.EARTH_DIVINITY.get())
-                .add(ModBlocks.ECHO_DIVINITY.get())
-                .add(ModBlocks.FIRE_DIVINITY.get())
-                .add(ModBlocks.ICE_DIVINITY.get())
-                .add(ModBlocks.IMAGINATION_DIVINITY.get())
-                .add(ModBlocks.LAVA_DIVINITY.get())
-                .add(ModBlocks.LIGHTNING_DIVINITY.get())
-                .add(ModBlocks.MOTION_DIVINITY.get())
-                .add(ModBlocks.NATURE_DIVINITY.get())
-                .add(ModBlocks.VOID_DIVINITY.get())
-                .add(ModBlocks.WATER_DIVINITY.get())
-                .add(ModBlocks.WIND_DIVINITY.get())
-                .add(ModBlocks.DIVINITIES_DIVINITY.get());
+            .add(DivinitiesBlocks.BLIGHT_DIVINITY.get())
+            .add(DivinitiesBlocks.DECAY_DIVINITY.get())
+                .add(DivinitiesBlocks.EARTH_DIVINITY.get())
+                .add(DivinitiesBlocks.ECHO_DIVINITY.get())
+                .add(DivinitiesBlocks.FIRE_DIVINITY.get())
+                .add(DivinitiesBlocks.ICE_DIVINITY.get())
+                .add(DivinitiesBlocks.IMAGINATION_DIVINITY.get())
+                .add(DivinitiesBlocks.LAVA_DIVINITY.get())
+                .add(DivinitiesBlocks.LIGHTNING_DIVINITY.get())
+                .add(DivinitiesBlocks.MOTION_DIVINITY.get())
+                .add(DivinitiesBlocks.NATURE_DIVINITY.get())
+                .add(DivinitiesBlocks.VOID_DIVINITY.get())
+                .add(DivinitiesBlocks.WATER_DIVINITY.get())
+                .add(DivinitiesBlocks.WIND_DIVINITY.get())
+                .add(DivinitiesBlocks.DIVINITIES_DIVINITY.get());
 
     }
 }

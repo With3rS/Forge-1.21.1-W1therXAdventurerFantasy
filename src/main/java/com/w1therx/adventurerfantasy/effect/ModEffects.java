@@ -1,8 +1,11 @@
 package com.w1therx.adventurerfantasy.effect;
 
 import com.w1therx.adventurerfantasy.AdventurerFantasy;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectCategory;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -26,6 +29,10 @@ public class ModEffects {
     public static final RegistryObject<MobEffect> EMPTIED_EFFECT = MOB_EFFECTS.register("emptied", () -> new EmptiedEffect(MobEffectCategory.NEUTRAL, 0x2e0f4f));
     public static final RegistryObject<MobEffect> WET_EFFECT = MOB_EFFECTS.register("wet", () -> new WetEffect(MobEffectCategory.NEUTRAL, 0x001075));
     public static final RegistryObject<MobEffect> WINDBLOWN_EFFECT = MOB_EFFECTS.register("windblown", () -> new WindblownEffect(MobEffectCategory.NEUTRAL, 0xcbdec8));
+    public static final RegistryObject<MobEffect> VERACITY_EFFECT = MOB_EFFECTS.register("veracity", () -> new VeracityEffect(MobEffectCategory.NEUTRAL, 0xc7a4de));
+    public static final RegistryObject<MobEffect> CREATIVE_SHOCK_EFFECT = MOB_EFFECTS.register("creative_shock", () -> new CreativeShockEffect(MobEffectCategory.HARMFUL, 0x301966));
+    public static final RegistryObject<MobEffect> CAUTION_EFFECT = MOB_EFFECTS.register("caution", () -> new CautionEffect(MobEffectCategory.BENEFICIAL, 0xc1c2c4));
+
 
     public static void register(IEventBus eventBus) {
         MOB_EFFECTS.register(eventBus);
