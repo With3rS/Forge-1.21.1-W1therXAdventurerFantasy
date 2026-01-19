@@ -47,8 +47,8 @@ public class AdditionalJumpInputReceiver {
 
 
 
-                 if (!player.getTags().contains("onGround")  && (independentStats.getIndependentStat(IndependentStatType.ADDITIONAL_JUMP_AVAILABLE) > 0)) {
-                     independentStats.setIndependentStat(IndependentStatType.ADDITIONAL_JUMP_AVAILABLE, independentStats.getIndependentStat(IndependentStatType.ADDITIONAL_JUMP_AVAILABLE) - 1);
+                 if (!player.getTags().contains("onGround")  && (independentStats.getIndependentStat(IndependentStatType.ADDITIONAL_JUMPS_AVAILABLE) > 0)) {
+                     independentStats.setIndependentStat(IndependentStatType.ADDITIONAL_JUMPS_AVAILABLE, independentStats.getIndependentStat(IndependentStatType.ADDITIONAL_JUMPS_AVAILABLE) - 1);
 
 
 

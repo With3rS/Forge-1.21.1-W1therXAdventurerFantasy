@@ -44,10 +44,12 @@ public class DashInputReceiver {
             IIndependentStats independentStats = independentStatsL.orElseThrow(()-> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
             IFinalStats stats = statsL.orElseThrow(()-> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
 
-            if (independentStats.getIndependentStat(IndependentStatType.DASH_AVAILABLE) > 0) {
-                independentStats.setIndependentStat(IndependentStatType.DASH_AVAILABLE,independentStats.getIndependentStat(IndependentStatType.DASH_AVAILABLE)-1);
+            if (independentStats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE) > 0) {
+                independentStats.setIndependentStat(IndependentStatType.DASHES_AVAILABLE,independentStats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE)-1);
                 double v = stats.getFinalStat(StatType.DASH_LENGTH) * 0.454;
-                if (!player.onGround()) {
+                if (player.isFallFlying()) {
+                    v = v * 0.137;
+                } else if (!player.onGround()) {
                     v =  v * 0.55;
                 }
                 Vec3 look = player.getLookAngle();

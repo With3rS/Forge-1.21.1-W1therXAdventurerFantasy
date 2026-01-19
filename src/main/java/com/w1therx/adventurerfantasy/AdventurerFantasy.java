@@ -1,19 +1,19 @@
 package com.w1therx.adventurerfantasy;
 
 import com.mojang.logging.LogUtils;
-import com.w1therx.adventurerfantasy.block.DivinitiesBlocks;
+import com.w1therx.adventurerfantasy.block.ModBlocksWithFireResistantItem;
 import com.w1therx.adventurerfantasy.block.ModBlocks;
 import com.w1therx.adventurerfantasy.capability.*;
-import com.w1therx.adventurerfantasy.effect.ModEffects;
-import com.w1therx.adventurerfantasy.event.ModKeyBindings;
+import com.w1therx.adventurerfantasy.commands.ModGameRules;
+import com.w1therx.adventurerfantasy.effect.general.ModEffects;
 import com.w1therx.adventurerfantasy.item.ModCreativeModeTabs;
 import com.w1therx.adventurerfantasy.item.ModItems;
 import com.w1therx.adventurerfantasy.network.ModNetworking;
+import com.w1therx.adventurerfantasy.particle.*;
+import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RegisterParticleProvidersEvent;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.common.capabilities.Capability;
-import net.minecraftforge.common.capabilities.CapabilityManager;
-import net.minecraftforge.common.capabilities.CapabilityToken;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -50,11 +50,15 @@ public class AdventurerFantasy
         ModItems.register(modEventBus);
 
         ModBlocks.register(modEventBus);
-        DivinitiesBlocks.register(modEventBus);
+        ModBlocksWithFireResistantItem.register(modEventBus);
 
         ModSounds.SOUND_EVENTS.register(modEventBus);
 
         ModEffects.register(modEventBus);
+
+        ModGameRules.register();
+
+        ModParticles.register(modEventBus);
 
         // Register the item to a creative tab
         modEventBus.addListener(this::addCreative);
@@ -98,6 +102,15 @@ public class AdventurerFantasy
         @SubscribeEvent
         public static void onClientSetup(FMLClientSetupEvent event)
         {
+        }
+
+        @SubscribeEvent
+        public static void registerParticleProvider (RegisterParticleProvidersEvent event) {
+            event.registerSpriteSet(ModParticles.CONTAMINATED_PARTICLES.get(), ContaminatedParticles.Provider::new);
+            event.registerSpriteSet(ModParticles.CRYSTALLIZED_PARTICLES.get(), CrystallizedParticles.Provider::new);
+            event.registerSpriteSet(ModParticles.ECSTATIC_PARTICLES.get(), EcstaticParticles.Provider::new);
+            event.registerSpriteSet(ModParticles.ELECTRIFIED_PARTICLES.get(), ElectrifiedParticles.Provider::new);
+
         }
     }
 }

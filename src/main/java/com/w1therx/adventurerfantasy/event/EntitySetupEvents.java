@@ -46,7 +46,6 @@ public class EntitySetupEvents {
                 independentStats.setIndependentStat(IndependentStatType.HEALTH, 20);
                 baseStats.setBaseStat(StatType.CRIT_RATE, 0.05);
                 baseStats.setBaseStat(StatType.HEALTH_REGENERATION_AMP, 1);
-                baseStats.setBaseStat(StatType.MAX_BOND_OF_LIFE, 40);
                 event.getEntity().getTags().remove("shouldSetMaxHP");
 
             } else {
@@ -56,8 +55,13 @@ public class EntitySetupEvents {
                 event.getEntity().getTags().remove("shouldSetMaxHP");
             }
 
+            baseStats.setBaseStat(StatType.MAX_BOND_OF_LIFE, baseStats.getBaseStat(StatType.MAX_HEALTH)*2);
             dirtyStats.setDirtyStat(StatType.MAX_BOND_OF_LIFE, true);
 
+            StatType[] statList = StatType.values();
+            for (StatType stat : statList) {
+                dirtyStats.setDirtyStat(stat, true);
+            }
 
 
         }

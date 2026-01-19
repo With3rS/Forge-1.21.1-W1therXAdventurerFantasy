@@ -1,18 +1,12 @@
 package com.w1therx.adventurerfantasy.datagen;
 
-import com.w1therx.adventurerfantasy.block.DivinitiesBlocks;
-import com.w1therx.adventurerfantasy.block.ModBlocks;
+import com.w1therx.adventurerfantasy.block.ModBlocksWithFireResistantItem;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.loot.BlockLootSubProvider;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.flag.FeatureFlags;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraftforge.registries.RegistryObject;
 
-import java.util.Map;
 import java.util.Set;
 
 public class ModBlockLootTableProvider extends BlockLootSubProvider {
@@ -22,26 +16,42 @@ public class ModBlockLootTableProvider extends BlockLootSubProvider {
 
     @Override
     protected void generate() {
-        dropSelf(DivinitiesBlocks.BLIGHT_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.DECAY_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.EARTH_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.ECHO_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.FIRE_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.ICE_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.IMAGINATION_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.LAVA_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.LIGHTNING_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.MOTION_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.NATURE_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.VOID_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.WATER_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.WIND_DIVINITY.get());
-        dropSelf(DivinitiesBlocks.DIVINITIES_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.BLIGHT_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.DECAY_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.EARTH_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.ECHO_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.FIRE_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.ICE_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.IMAGINATION_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.LAVA_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.LIGHTNING_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.MOTION_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.NATURE_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.VOID_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.WATER_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.WIND_DIVINITY.get());
+        dropSelf(ModBlocksWithFireResistantItem.DIVINITIES_DIVINITY.get());
+
+        dropSelf(ModBlocksWithFireResistantItem.BLIGHT_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.DECAY_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.EARTH_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.ECHO_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.FIRE_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.ICE_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.IMAGINATION_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.LAVA_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.LIGHTNING_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.MOTION_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.NATURE_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.VOID_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.WATER_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.WIND_PRINCIPLE.get());
+        dropSelf(ModBlocksWithFireResistantItem.PRINCIPLES_PRINCIPLE.get());
 
     }
 
     @Override
     protected Iterable<Block> getKnownBlocks() {
-        return DivinitiesBlocks.BLOCKS.getEntries().stream().map(RegistryObject::get)::iterator;
+        return ModBlocksWithFireResistantItem.BLOCKS.getEntries().stream().map(RegistryObject::get)::iterator;
     }
 }

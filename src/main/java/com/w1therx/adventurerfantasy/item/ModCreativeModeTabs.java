@@ -1,8 +1,7 @@
 package com.w1therx.adventurerfantasy.item;
 
 import com.w1therx.adventurerfantasy.AdventurerFantasy;
-import com.w1therx.adventurerfantasy.block.DivinitiesBlocks;
-import com.w1therx.adventurerfantasy.block.ModBlocks;
+import com.w1therx.adventurerfantasy.block.ModBlocksWithFireResistantItem;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
@@ -51,24 +50,40 @@ public class ModCreativeModeTabs {
                 output.accept(ModItems.LOGOI_LOGOS.get());
 
             }).build());
-    public static final RegistryObject<CreativeModeTab> ELEMENTAL_BLOCKS_TAB = CREATIVE_MODE_TABS.register("elemental_blocks_tab", () -> CreativeModeTab.builder().icon(()-> new ItemStack(DivinitiesBlocks.DIVINITIES_DIVINITY.get()))
+    public static final RegistryObject<CreativeModeTab> ELEMENTAL_BLOCKS_TAB = CREATIVE_MODE_TABS.register("elemental_blocks_tab", () -> CreativeModeTab.builder().icon(()-> new ItemStack(ModBlocksWithFireResistantItem.DIVINITIES_DIVINITY.get()))
             .title(Component.translatable("creativetab.adventurerfantasy.elemental_blocks")).withTabsBefore(ELEMENTAL_INGREDIENTS_TAB.getId())
             .displayItems((itemDisplayParameters, output) -> {
-                output.accept(DivinitiesBlocks.BLIGHT_DIVINITY.get());
-                output.accept(DivinitiesBlocks.DECAY_DIVINITY.get());
-                output.accept(DivinitiesBlocks.EARTH_DIVINITY.get());
-                output.accept(DivinitiesBlocks.ECHO_DIVINITY.get());
-                output.accept(DivinitiesBlocks.FIRE_DIVINITY.get());
-                output.accept(DivinitiesBlocks.ICE_DIVINITY.get());
-                output.accept(DivinitiesBlocks.IMAGINATION_DIVINITY.get());
-                output.accept(DivinitiesBlocks.LAVA_DIVINITY.get());
-                output.accept(DivinitiesBlocks.LIGHTNING_DIVINITY.get());
-                output.accept(DivinitiesBlocks.MOTION_DIVINITY.get());
-                output.accept(DivinitiesBlocks.NATURE_DIVINITY.get());
-                output.accept(DivinitiesBlocks.VOID_DIVINITY.get());
-                output.accept(DivinitiesBlocks.WATER_DIVINITY.get());
-                output.accept(DivinitiesBlocks.WIND_DIVINITY.get());
-                output.accept(DivinitiesBlocks.DIVINITIES_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.BLIGHT_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.DECAY_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.EARTH_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.ECHO_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.FIRE_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.ICE_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.IMAGINATION_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.LAVA_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.LIGHTNING_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.MOTION_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.NATURE_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.VOID_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.WATER_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.WIND_DIVINITY.get());
+                output.accept(ModBlocksWithFireResistantItem.DIVINITIES_DIVINITY.get());
+
+                output.accept(ModBlocksWithFireResistantItem.BLIGHT_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.DECAY_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.EARTH_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.ECHO_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.FIRE_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.ICE_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.IMAGINATION_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.LAVA_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.LIGHTNING_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.MOTION_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.NATURE_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.VOID_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.WATER_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.WIND_PRINCIPLE.get());
+                output.accept(ModBlocksWithFireResistantItem.PRINCIPLES_PRINCIPLE.get());
 
             }).build());
 

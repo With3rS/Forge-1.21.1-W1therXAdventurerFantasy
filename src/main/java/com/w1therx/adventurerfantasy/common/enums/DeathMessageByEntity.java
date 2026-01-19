@@ -1,8 +1,5 @@
 package com.w1therx.adventurerfantasy.common.enums;
 
-import com.w1therx.adventurerfantasy.effect.ModEffects;
-import net.minecraft.server.level.ServerPlayer;
-
 public enum DeathMessageByEntity {
     a ("$player was slain by $killer."),
     b ("$player's incompetence was put on display by $killer."),

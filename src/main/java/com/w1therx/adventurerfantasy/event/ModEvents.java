@@ -1,18 +1,22 @@
 package com.w1therx.adventurerfantasy.event;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.brigadier.CommandDispatcher;
 import com.w1therx.adventurerfantasy.AdventurerFantasy;
 import com.w1therx.adventurerfantasy.capability.*;
-import com.w1therx.adventurerfantasy.commands.CustomCommands;
+import com.w1therx.adventurerfantasy.commands.ModCommands;
+import com.w1therx.adventurerfantasy.commands.ModGameRules;
 import com.w1therx.adventurerfantasy.common.enums.*;
-import com.w1therx.adventurerfantasy.effect.ModEffects;
-import com.w1therx.adventurerfantasy.effect.combat.StatusEffectEntry;
+import com.w1therx.adventurerfantasy.effect.general.ModEffects;
+import com.w1therx.adventurerfantasy.effect.general.*;
 import com.w1therx.adventurerfantasy.event.custom.*;
 import com.w1therx.adventurerfantasy.network.ModNetworking;
 import com.w1therx.adventurerfantasy.network.packet.AdditionalJumpInputReceiver;
 import com.w1therx.adventurerfantasy.network.packet.ClientStatReceiver;
 import com.w1therx.adventurerfantasy.network.packet.DashInputReceiver;
 import com.w1therx.adventurerfantasy.network.packet.InteractInputReceiver;
+import com.w1therx.adventurerfantasy.util.ModGeneralUtils;
+import com.w1therx.adventurerfantasy.util.ModTags;
 import net.minecraft.ChatFormatting;
 
 import net.minecraft.client.Minecraft;
@@ -27,6 +31,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.*;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -40,6 +45,7 @@ import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.player.Player;
@@ -47,6 +53,7 @@ import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -58,10 +65,12 @@ import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.event.entity.EntityMountEvent;
 import net.minecraftforge.event.entity.living.*;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.level.BlockEvent;
+import net.minecraftforge.event.level.SleepFinishedTimeEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
@@ -79,7 +88,7 @@ import static java.lang.Math.max;
 
 
 //Add: reaction-bound custom event-bound dmg calculator, DoT-bound custom-event-bound dmg calculator, aggro calculator,
-// AI overriding, teams, <healing>/<shielding>/<outgoing effects>/<natural regeneration calculators>, <capability setup>, <stat calculation logic>, ability for items/<gear>/effects to modify stats, GUIs
+// AI overriding, teams, ability for items/<gear>/effects to modify stats, GUIs
 
 
 public class ModEvents {
@@ -96,9 +105,11 @@ public class ModEvents {
             event.addCapability(ResourceLocation.fromNamespaceAndPath(AdventurerFantasy.MOD_ID, "independent_stats"), new IndependentStatsProvider());
             event.getObject().addTag("shouldSetMaxHP");
 
-
             if ((event.getObject() instanceof ArmorStand)) {
                 event.addCapability(ResourceLocation.fromNamespaceAndPath(AdventurerFantasy.MOD_ID, "indicator_stats"), new IndicatorStatsProvider());
+            }
+            if (event.getObject() instanceof Player) {
+                event.addCapability(ResourceLocation.fromNamespaceAndPath(AdventurerFantasy.MOD_ID, "player_stats"), new PlayerStatsProvider());
             }
         }
     }
@@ -121,6 +132,8 @@ public class ModEvents {
             } else {
                 attacker = ((Projectile) attacker).getOwner();
             }
+        } else {
+            attacker = event.getSource().getEntity();
         }
 
         boolean triggerIFrames = false;
@@ -135,24 +148,13 @@ public class ModEvents {
         IFinalStats attackerStats = null;
         IIndependentStats independentAttackerStats = null;
 
-        System.out.println("[DEBUG] Entity targeted. ");
-
         LazyOptional<IFinalStats> targetStatsL = target.getCapability(ModCapabilities.FINAL_STATS);
         LazyOptional<IIndependentStats> independentTargetStatsL = target.getCapability(ModCapabilities.INDEPENDENT_STATS);
 
-        if (!independentTargetStatsL.isPresent()) {
-            System.out.println("[DEBUG] Couldn't find target independent stats. ");
-            if (!targetStatsL.isPresent()) {
-                System.out.println("[DEBUG] Couldn't find target final stats. ");
-                return;
-            }
+        if (!independentTargetStatsL.isPresent() || !targetStatsL.isPresent()) {
             return;
         }
 
-        if (!targetStatsL.isPresent()) {
-            System.out.print("[DEBUG] Couldn't find target final stats. ");
-            return;
-        }
 
         System.out.print("[DEBUG] Target's stats found. ");
 
@@ -162,8 +164,97 @@ public class ModEvents {
         event.setAmount(0);
 
         int invulnerableTime = (int) independentTargetStats.getIndependentStat(IndependentStatType.INVULNERABLE_TIME);
-        if (invulnerableTime >= 1) {
+        if (invulnerableTime >= 1 || independentTargetStats.getActiveEffectList().containsKey(ModEffects.BLESSING_OF_UNDYING_EFFECT.get())) {
             return;
+        }
+
+        if (targetStats.getFinalStat(StatType.DODGE_CHANCE) > 0) {
+            double actualDodgeChance = Math.random();
+            double dodgeChance = targetStats.getFinalStat(StatType.DODGE_CHANCE);
+
+            if (actualDodgeChance < dodgeChance) {
+
+                if (attacker instanceof LivingEntity livingAttacker) {
+                    target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onDodge(target, livingAttacker);
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    attacker.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onAttackMiss(livingAttacker, target);
+                                    }
+                                }
+                            }}
+                    });
+
+
+                } else {
+                    target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onDodge(target, null);
+                                    }
+                                }
+                            }}
+                    });
+                }
+
+                ArmorStand armorStand = new ArmorStand(EntityType.ARMOR_STAND, level);
+                armorStand.addTag("indicator");
+                double xr = target.getX() + Math.random() - 0.5;
+                double yr = target.getY() + 1 + Math.random();
+                double zr = target.getX() + Math.random() - 0.5;
+                armorStand.addTag("indicator");
+                CompoundTag tag1 = new CompoundTag();
+                tag1.putBoolean("Marker", true);
+                armorStand.load(tag1);
+
+
+                armorStand.getPersistentData().putString("adventurer_fantasy:name", "Dodged");
+                armorStand.getPersistentData().putDouble("adventurer_fantasy:x", xr);
+                armorStand.getPersistentData().putDouble("adventurer_fantasy:y", yr);
+                armorStand.getPersistentData().putDouble("adventurer_fantasy:z", zr);
+                armorStand.getPersistentData().putDouble("adventurer_fantasy:Dx", 0);
+                armorStand.getPersistentData().putDouble("adventurer_fantasy:Dy", 0.1);
+                armorStand.getPersistentData().putDouble("adventurer_fantasy:Dz", 0);
+                armorStand.getPersistentData().putInt("adventurer_fantasy:lifetime", 40);
+                armorStand.getPersistentData().putInt("adventurer_fantasy:color", 0x6E8287);
+                armorStand.getPersistentData().putBoolean("adventurer_fantasy:isBold", false);
+
+
+                armorStand.addTag("indicatorToInitialise");
+
+                armorStand.setPos(xr, yr, zr);
+                armorStand.isMarker();
+                armorStand.setInvisible(true);
+                armorStand.setNoGravity(true);
+                armorStand.setNoBasePlate(true);
+                armorStand.setShowArms(false);
+                level.addFreshEntity(armorStand);
+
+                independentTargetStats.setIndependentStat(IndependentStatType.INVULNERABLE_TIME, targetStats.getFinalStat(StatType.INVULNERABLE_DURATION));
+
+                return;
+            }
         }
 
         if (!(attacker instanceof LivingEntity)) {
@@ -171,8 +262,7 @@ public class ModEvents {
             source = event.getSource();
             Holder<DamageType> type = source.typeHolder();
 
-            System.out.println("[DEBUG] " + target.getName().getString() + " took damage from " + type);
-
+            triggerIFrames = true;
             double elementalRes;
             RegistryAccess registryAccess = level.registryAccess();
             Registry<DamageType> damageTypeRegistry = registryAccess.registryOrThrow(Registries.DAMAGE_TYPE);
@@ -209,6 +299,7 @@ public class ModEvents {
                 elementalRes = targetStats.getFinalStat(StatType.PHYSICAL_DMG_RES);
             } else if (type == damageTypeRegistry.getHolderOrThrow(DamageTypes.FELL_OUT_OF_WORLD) || type == damageTypeRegistry.getHolderOrThrow(DamageTypes.STARVE) || type == damageTypeRegistry.getHolderOrThrow(DamageTypes.CRAMMING)) {
                 double hp = targetStats.getFinalStat(StatType.MAX_HEALTH);
+                triggerIFrames = false;
                 baseDmg = hp/20;
                 if (type == damageTypeRegistry.getHolderOrThrow(DamageTypes.FELL_OUT_OF_WORLD) ||type == damageTypeRegistry.getHolderOrThrow(DamageTypes.CRAMMING)) {
                     baseDmg = baseDmg * 4;
@@ -221,15 +312,16 @@ public class ModEvents {
                 double hp = targetStats.getFinalStat(StatType.MAX_HEALTH);
                 baseDmg = hp/10;
                 baseDmg = baseDmg * (1 - targetStats.getFinalStat(StatType.DROWNING_DMG_RES));
+                triggerIFrames = false;
             } else if (type == damageTypeRegistry.getHolderOrThrow(DamageTypes.FALL) || type == damageTypeRegistry.getHolderOrThrow(DamageTypes.FLY_INTO_WALL)) {
                 elementType = ElementType.WIND;
                 elementalRes = targetStats.getFinalStat(StatType.WIND_DMG_RES);
                 baseDmg = baseDmg * (1 - targetStats.getFinalStat(StatType.FALL_DMG_RES));
+                triggerIFrames = false;
             } else {
                 elementType = ElementType.PHYSICAL;
                 elementalRes = targetStats.getFinalStat(StatType.PHYSICAL_DMG_RES);
             }
-            DmgInstanceType dmgType = DmgInstanceType.DIRECT;
             double allRes = targetStats.getFinalStat(StatType.ALL_DMG_RES);
             double armor = targetStats.getFinalStat(StatType.ARMOR);
             if (elementType == ElementType.TRUE) {
@@ -237,15 +329,9 @@ public class ModEvents {
             } else {
                 damage = (baseDmg * (1 - allRes) * (1 - elementalRes) - armor / 4);
             }
-            damage = max(damage, 0.0);
-            triggerIFrames = true;
-        } else {
 
-            if (attacker instanceof Player) {
-                System.out.println("[DEBUG] Player attacked " + target.getName().getString());
-            } else {
-                System.out.println("[DEBUG]" + attacker.getName().getString() + " attacked " + target.getName().getString());
-            }
+            damage = max(damage, 0.0);
+        } else {
 
             source = null;
             LazyOptional<IFinalStats> attackerStatsL = attacker.getCapability(ModCapabilities.FINAL_STATS);
@@ -354,6 +440,9 @@ public class ModEvents {
                 } else if (dmgType == DmgInstanceType.SUMMON) {
                     instanceRes = targetStats.getFinalStat(StatType.SUMMON_DMG_RES);
                     instanceAmp = attackerStats.getFinalStat(StatType.SUMMON_DMG_AMP);
+                } else if (dmgType == DmgInstanceType.ULTIMATE) {
+                    instanceRes = targetStats.getFinalStat(StatType.ULTIMATE_DMG_RES);
+                    instanceAmp = attackerStats.getFinalStat(StatType.ULTIMATE_DMG_AMP);
                 } else {
                     instanceRes = 0;
                     instanceAmp = 1;
@@ -372,9 +461,51 @@ public class ModEvents {
                     double critDmg = attackerStats.getFinalStat(StatType.CRIT_DMG);
                     damageMult *= critDmg;
                     isCrit = true;
+
+                    if (attacker instanceof LivingEntity finalAttacker2) {
+                        target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                            if (!stats.getActiveEffectList().isEmpty()) {
+                                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                    if (effectMap.containsKey(copiedEffect)) {
+                                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                            ((ICustomStatusEffect) copiedEffect).onReceivingCrit(target, finalAttacker2);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        attacker.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                            if (!stats.getActiveEffectList().isEmpty()) {
+                                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                    if (effectMap.containsKey(copiedEffect)) {
+                                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                            ((ICustomStatusEffect) copiedEffect).onCrit(finalAttacker2, target);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                    } else {
+                        target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                            if (!stats.getActiveEffectList().isEmpty()) {
+                                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                    if (effectMap.containsKey(copiedEffect)) {
+                                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                            ((ICustomStatusEffect) copiedEffect).onReceivingCrit(target, null);
+                                        }
+                                    }
+                                }}
+                        });
+                    }
                 }
-
-
 
 
                 damage = damageMult - (armor * (1 - armorPen)) / 4;
@@ -392,37 +523,47 @@ public class ModEvents {
                 double knockbackStrength = attackerStats.getFinalStat(StatType.KNOCKBACK_STRENGTH_AMP);
                 double knockbackRes = targetStats.getFinalStat(StatType.KNOCKBACK_RES);
                 Vec3 direction = target.position().subtract(attacker.position()).normalize().scale(max(0, knockbackStrength * (1 - knockbackRes)));
-                target.setDeltaMovement(direction);
+                target.setDeltaMovement(target.getDeltaMovement().add(direction));
+                target.hurtMarked = true;
             }
 
             List<StatusEffectEntry> EffectList = independentAttackerStats.getEffectList();
-            double CCRes = targetStats.getFinalStat(StatType.CC_RES);
-            double effectChance;
             for (StatusEffectEntry entry : EffectList) {
-                if (!(entry.effect() == null)) {
-                    double effectAmp = entry.amplifier();
-                    if (!entry.effect().get().isBeneficial()) {
-                        effectChance = entry.baseChance() + attackerStats.getFinalStat(StatType.EFFECT_HIT_RATE) - targetStats.getFinalStat(StatType.EFFECT_RES);
-                        if (entry.effect().get() instanceof ICCDebuff) {
-                            effectChance -= CCRes;
-                            effectAmp *= attackerStats.getFinalStat(StatType.CC_DEBUFF_EFFICIENCY);
-                        }
-                        if (!(entry.effect().get() instanceof IDoTDebuff)) {
-                            effectAmp *= attackerStats.getFinalStat(StatType.NON_DAMAGING_DEBUFF_EFFICIENCY);
-                        }
-                    } else {
-                        effectChance = entry.baseChance() + attackerStats.getFinalStat(StatType.EFFECT_HIT_RATE);
-                    }
-                    double roll = Math.random();
-
-                    if (roll <= effectChance) {
-                        if (entry.effect().getKey() != null) {
-                            Holder<MobEffect> effectHolder = BuiltInRegistries.MOB_EFFECT.getHolderOrThrow(entry.effect().getKey());
-                            target.addEffect(new MobEffectInstance(effectHolder, (int) (entry.duration() * attackerStats.getFinalStat(StatType.EFFECT_DURATION)), (int) (effectAmp)));
-                        }
-                    }
-                }
+                MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent((LivingEntity) attacker, target, entry.effect(), entry.duration(), entry.baseChance(), entry.amplifier(), entry.stacks(), entry.maxStacks(), false));
             }
+        }
+
+
+        double finalDamage = damage;
+        Entity finalAttacker = attacker;
+        target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+            if (!stats.getActiveEffectList().isEmpty()) {
+                Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                    if (effectMap.containsKey(copiedEffect)) {
+                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                            if (finalAttacker instanceof LivingEntity livingAttacker) {
+                                ((ICustomStatusEffect) copiedEffect).onBeingHurt(target, livingAttacker, finalDamage);
+                            } else {
+                                ((ICustomStatusEffect) copiedEffect).onBeingHurt(target, null, finalDamage);
+                            }
+                        }}
+                }}
+        });
+
+        if (attacker instanceof LivingEntity livingAttacker) {
+            attacker.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                if (!stats.getActiveEffectList().isEmpty()) {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                        if (effectMap.containsKey(copiedEffect)) {
+                            StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                            if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                ((ICustomStatusEffect) copiedEffect).onHurt(livingAttacker, target, finalDamage);
+                            }}
+                    }}
+            });
         }
 
         double currentHP = independentTargetStats.getIndependentStat(IndependentStatType.HEALTH);
@@ -435,27 +576,100 @@ public class ModEvents {
         if (triggerIFrames) {
             int newInvulnerable = (int) targetStats.getFinalStat(StatType.INVULNERABLE_DURATION);
             independentTargetStats.setIndependentStat(IndependentStatType.INVULNERABLE_TIME, newInvulnerable);
-            triggerIFrames = false;
             System.out.println("[DEBUG] Triggered iFrames for " + target.getName().getString());
         }
 
 
-        if (elementType == ElementType.FIRE && ElementType.WATER.getEffect().getHolder().isPresent() && target.hasEffect(ElementType.WATER.getEffect().getHolder().get()) && (independentTargetStats.getIndependentStat(IndependentStatType.REACTION_TIME) <= 0)) {
-            target.removeEffect(ElementType.WATER.getEffect().getHolder().get());
-            if (!(attacker instanceof LivingEntity)) {
+        if (elementType == ElementType.FIRE && independentTargetStats.getActiveEffectList().containsKey(ModEffects.WET_EFFECT.get()) && (independentTargetStats.getIndependentStat(IndependentStatType.REACTION_TIME) <= 0)) {
+            if (!(attacker instanceof LivingEntity livingAttacker)) {
                 damage = damage * 1.15;
                 independentTargetStats.setIndependentStat(IndependentStatType.REACTION_TIME, 40);
+
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.FROSTED_EFFECT.get()).applier();
+
+                LivingEntity triggerer2;
+
+                if (level instanceof ServerLevel serverLevel) {
+                    serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 6 + 6), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.45);
+
+                    triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+                } else {
+                    triggerer2 = null;
+                }
+
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, null, triggerer2, ElementalReaction.VAPORISE);
+                                }
+                            }
+                        }}
+                });
             } else {
                 damage = damage * (1.15 + attackerStats.getFinalStat(StatType.ELEMENTAL_MASTERY) / 2.50);
                 independentTargetStats.setIndependentStat(IndependentStatType.REACTION_TIME, independentAttackerStats.getIndependentStat(IndependentStatType.REACTION_COOLDOWN));
+
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.FROSTED_EFFECT.get()).applier();
+
+                LivingEntity triggerer2;
+
+                if (level instanceof ServerLevel serverLevel) {
+                    serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 6 + 6), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.45);
+
+                    triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+                } else {
+                    triggerer2 = null;
+                }
+
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, livingAttacker, triggerer2, ElementalReaction.VAPORISE);
+                                }
+                            }
+                        }}
+                });
             }
+
+            if (level instanceof ServerLevel serverLevel) {
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.WET_EFFECT.get()).applier();
+
+                LivingEntity triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+
+                if (triggerer2 instanceof LivingEntity) {
+                    Entity finalAttacker3 = attacker;
+                    triggerer2.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, triggerer2, (LivingEntity) finalAttacker3, ElementalReaction.MELT);
+                                    }
+                                }
+                            }}
+                    });
+                }
+            }
+
+            independentTargetStats.removeActiveEffect(ModEffects.WET_EFFECT.get(), target);
+
 
             level.playSound(null, x, y, z, SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 1.0F, 1.0F);
             ArmorStand armorStand = new ArmorStand(EntityType.ARMOR_STAND, level);
             armorStand.addTag("indicator");
-            if (level instanceof ServerLevel serverLevel) {
-                serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 6 + 6), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.45);
-            }
+
             double xr = x + Math.random() - 0.5;
             double yr = y + 1 + Math.random();
             double zr = z + Math.random() - 0.5;
@@ -485,20 +699,94 @@ public class ModEvents {
             armorStand.setNoBasePlate(true);
             armorStand.setShowArms(false);
             level.addFreshEntity(armorStand);
-        } else if (elementType == ElementType.WATER && ElementType.FIRE.getEffect().getHolder().isPresent() && target.hasEffect(ElementType.FIRE.getEffect().getHolder().get()) && (independentTargetStats.getIndependentStat(IndependentStatType.REACTION_TIME) <= 0)) {
-            target.removeEffect(ElementType.FIRE.getEffect().getHolder().get());
-            if (!(attacker instanceof LivingEntity)) {
+        } else if (elementType == ElementType.WATER && independentTargetStats.getActiveEffectList().containsKey(ModEffects.BLAZING_EFFECT.get()) && (independentTargetStats.getIndependentStat(IndependentStatType.REACTION_TIME) <= 0)) {
+            if (!(attacker instanceof LivingEntity livingAttacker)) {
                 damage = damage * 1.2;
                 independentTargetStats.setIndependentStat(IndependentStatType.REACTION_TIME, 40);
+
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.FROSTED_EFFECT.get()).applier();
+
+                LivingEntity triggerer2;
+
+                if (level instanceof ServerLevel serverLevel) {
+                    serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 6 + 6), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.45);
+
+                    triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+                } else {
+                    triggerer2 = null;
+                }
+
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, null, triggerer2, ElementalReaction.VAPORISE);
+                                }
+                            }
+                        }}
+                });
             } else {
                 damage = damage * (1.2 + attackerStats.getFinalStat(StatType.ELEMENTAL_MASTERY) / 2.50);
                 independentTargetStats.setIndependentStat(IndependentStatType.REACTION_TIME, independentAttackerStats.getIndependentStat(IndependentStatType.REACTION_COOLDOWN));
+
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.FROSTED_EFFECT.get()).applier();
+
+                LivingEntity triggerer2;
+
+                if (level instanceof ServerLevel serverLevel) {
+                    serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 6 + 6), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.45);
+
+                    triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+                } else {
+                    triggerer2 = null;
+                }
+
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, livingAttacker, triggerer2, ElementalReaction.VAPORISE);
+                                }
+                            }
+                        }}
+                });
             }
 
-            level.playSound(null, x, y, z, SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 1.0F, 1.0F);
             if (level instanceof ServerLevel serverLevel) {
-                serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 6 + 6), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.45);
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.BLAZING_EFFECT.get()).applier();
+
+                LivingEntity triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+
+                if (triggerer2 instanceof LivingEntity) {
+                    Entity finalAttacker3 = attacker;
+                    triggerer2.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, triggerer2, (LivingEntity) finalAttacker3, ElementalReaction.MELT);
+                                    }
+                                }
+                            }}
+                    });
+                }
             }
+
+            independentTargetStats.removeActiveEffect(ModEffects.BLAZING_EFFECT.get(), target);
+
+
+            level.playSound(null, x, y, z, SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 1.0F, 1.0F);
+
             ArmorStand armorStand = new ArmorStand(EntityType.ARMOR_STAND, level);
             armorStand.addTag("indicator");
             double xr = x + Math.random() - 0.5;
@@ -532,18 +820,90 @@ public class ModEvents {
             level.addFreshEntity(armorStand);
 
 
-        } else if (elementType == ElementType.FIRE && ElementType.ICE.getEffect().getHolder().isPresent() && target.hasEffect(ElementType.ICE.getEffect().getHolder().get()) && (independentTargetStats.getIndependentStat(IndependentStatType.REACTION_TIME) <= 0)) {
-            target.removeEffect(ElementType.ICE.getEffect().getHolder().get());
-            if (!(attacker instanceof LivingEntity)) {
+        } else if (elementType == ElementType.FIRE && independentTargetStats.getActiveEffectList().containsKey(ModEffects.FROSTED_EFFECT.get()) && (independentTargetStats.getIndependentStat(IndependentStatType.REACTION_TIME) <= 0)) {
+            if (!(attacker instanceof LivingEntity livingAttacker)) {
                 damage = damage * 1.2;
                 independentTargetStats.setIndependentStat(IndependentStatType.REACTION_TIME, 40);
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.FROSTED_EFFECT.get()).applier();
+
+                LivingEntity triggerer2;
+
+                if (level instanceof ServerLevel serverLevel) {
+                    serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 8 + 8), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.2 + 0.1);
+
+                    triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+                } else {
+                    triggerer2 = null;
+                }
+
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, null, triggerer2, ElementalReaction.MELT);
+                                }
+                            }
+                        }}
+                });
             } else {
                 damage = damage * (1.2 + attackerStats.getFinalStat(StatType.ELEMENTAL_MASTERY) / 2.50);
                 independentTargetStats.setIndependentStat(IndependentStatType.REACTION_TIME, independentAttackerStats.getIndependentStat(IndependentStatType.REACTION_COOLDOWN));
+
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.FROSTED_EFFECT.get()).applier();
+
+                LivingEntity triggerer2;
+
+                if (level instanceof ServerLevel serverLevel) {
+                    serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 8 + 8), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.2 + 0.1);
+
+                    triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+                } else {
+                    triggerer2 = null;
+                }
+
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, livingAttacker, triggerer2, ElementalReaction.MELT);
+                                }
+                            }
+                        }}
+                });
             }
+
             if (level instanceof ServerLevel serverLevel) {
-                serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 8 + 8), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.2 + 0.1);
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.FROSTED_EFFECT.get()).applier();
+
+                LivingEntity triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+
+                if (triggerer2 instanceof LivingEntity) {
+                    Entity finalAttacker3 = attacker;
+                    triggerer2.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, triggerer2, (LivingEntity) finalAttacker3, ElementalReaction.MELT);
+                                    }
+                                }
+                            }}
+                    });
+                }
             }
+
+            independentTargetStats.removeActiveEffect(ModEffects.FROSTED_EFFECT.get(), target);
+
             level.playSound(null, x, y, z, SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 1.3F, 0.5F);
             ArmorStand armorStand = new ArmorStand(EntityType.ARMOR_STAND, level);
             armorStand.addTag("indicator");
@@ -578,20 +938,94 @@ public class ModEvents {
             armorStand.setShowArms(false);
             level.addFreshEntity(armorStand);
 
-        } else if (elementType == ElementType.ICE && ElementType.FIRE.getEffect().getHolder().isPresent() && target.hasEffect(ElementType.FIRE.getEffect().getHolder().get()) && (independentTargetStats.getIndependentStat(IndependentStatType.REACTION_TIME) <= 0)) {
-            target.removeEffect(ElementType.FIRE.getEffect().getHolder().get());
-            if (!(attacker instanceof LivingEntity)) {
+        } else if (elementType == ElementType.ICE && independentTargetStats.getActiveEffectList().containsKey(ModEffects.BLAZING_EFFECT.get()) && (independentTargetStats.getIndependentStat(IndependentStatType.REACTION_TIME) <= 0)) {
+            if (!(attacker instanceof LivingEntity livingAttacker)) {
                 damage = damage * 1.15;
                 independentTargetStats.setIndependentStat(IndependentStatType.REACTION_TIME, 40);
+
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.FROSTED_EFFECT.get()).applier();
+
+                LivingEntity triggerer2;
+
+                if (level instanceof ServerLevel serverLevel) {
+                    serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 8 + 8), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.2 + 0.1);
+
+                    triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+                } else {
+                    triggerer2 = null;
+                }
+
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, null, triggerer2, ElementalReaction.MELT);
+                                }
+                            }
+                        }}
+                });
             } else {
                 damage = damage * (1.15 + attackerStats.getFinalStat(StatType.ELEMENTAL_MASTERY) / 2.50);
                 independentTargetStats.setIndependentStat(IndependentStatType.REACTION_TIME, independentAttackerStats.getIndependentStat(IndependentStatType.REACTION_COOLDOWN));
+
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.FROSTED_EFFECT.get()).applier();
+
+                LivingEntity triggerer2;
+
+                if (level instanceof ServerLevel serverLevel) {
+                    serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 8 + 8), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.2 + 0.1);
+
+                    triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+                } else {
+                    triggerer2 = null;
+                }
+
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, livingAttacker, triggerer2, ElementalReaction.MELT);
+                                }
+                            }
+                        }}
+                });
             }
 
-            level.playSound(null, x, y, z, SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 1.3F, 0.5F);
             if (level instanceof ServerLevel serverLevel) {
-                serverLevel.sendParticles(ParticleTypes.POOF, x, y, z, (int) (Math.random() * 8 + 8), Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.2 + 0.1);
+                UUID uuid = independentTargetStats.getActiveEffectData(ModEffects.BLAZING_EFFECT.get()).applier();
+
+                LivingEntity triggerer2 = (LivingEntity) serverLevel.getEntity(uuid);
+
+                if (triggerer2 instanceof LivingEntity) {
+                    Entity finalAttacker3 = attacker;
+                    triggerer2.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onReactionTriggered(target, triggerer2, (LivingEntity) finalAttacker3, ElementalReaction.MELT);
+                                    }
+                                }
+                            }}
+                    });
+                }
             }
+
+            independentTargetStats.removeActiveEffect(ModEffects.BLAZING_EFFECT.get(), target);
+
+
+            level.playSound(null, x, y, z, SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 1.3F, 0.5F);
+
             ArmorStand armorStand = new ArmorStand(EntityType.ARMOR_STAND, level);
             armorStand.addTag("indicator");
             double xr = x + Math.random() - 0.5;
@@ -627,8 +1061,7 @@ public class ModEvents {
 
         } else if ((elementType.getEffect() != null) && (elementType.getEffect().getKey() != null)) {
 
-            Holder<MobEffect> elementalHolder = BuiltInRegistries.MOB_EFFECT.getHolderOrThrow(elementType.getEffect().getKey());
-            target.addEffect(new MobEffectInstance(elementalHolder, 120));
+            MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent((LivingEntity) attacker, target, elementType.getEffect().get(), 120, 1, 1, 0, 0, true));
         }
 
 
@@ -637,7 +1070,6 @@ public class ModEvents {
         x = x + Math.random() - 0.5;
         y = y + 1 + Math.random();
         z = z + Math.random() - 0.5;
-        System.out.println("Indicator pos: " + x + ", " + y + ", " + z);
         String text = "";
         int color = 0xFFFFFF;
         int lifetime = 0;
@@ -655,8 +1087,22 @@ public class ModEvents {
             lostShield = shield;
             damage = damage - shield;
             shield = 0;
-            currentHP = Math.max(0, currentHP - damage);
+            currentHP = max(0, currentHP - damage);
             if (!(lostShield == 0)) {
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onShieldBreak(target);
+                                }
+                            }
+                        }}
+                });
+
                 if (!isCrit) {
                     color = 0xdecfa0;
                     lostShield = (int) (lostShield * 100);
@@ -698,7 +1144,7 @@ public class ModEvents {
 
             }
         } else {
-            shield = Math.max(0, shield - damage);
+            shield = max(0, shield - damage);
             if (!isCrit) {
                 color = 0xdecfa0;
                 lifetime = 35;
@@ -738,7 +1184,6 @@ public class ModEvents {
         armorStand.setShowArms(false);
 
         level.addFreshEntity(armorStand);
-        System.out.println("[DEBUG] Created new damage indicator.");
 
         if (lostShield != 0) {
             double x1 = x + Math.random();
@@ -793,7 +1238,15 @@ public class ModEvents {
         }
 
         if (target instanceof ServerPlayer player) {
-            ModNetworking.sendToPlayer(new ClientStatReceiver(independentTargetStats.getIndependentStatMap(), player.getFoodData().getSaturationLevel(), independentTargetStats.getElementType(), independentTargetStats.getWeapon(), targetStats.getFinalStatMap()), player);
+            player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                player.getCapability(ModCapabilities.BASE_STATS).ifPresent(statsB -> {
+                    player.getCapability(ModCapabilities.ADD_STATS).ifPresent(statsA -> {
+                        player.getCapability(ModCapabilities.MULT_STATS).ifPresent(statsM -> {
+                            ModNetworking.sendToPlayer(new ClientStatReceiver(player.getFoodData().getSaturationLevel(), independentTargetStats.serializeNBT(), targetStats.serializeNBT(), statsP.serializeNBT(), statsB.serializeNBT(), statsA.serializeNBT(), statsM.serializeNBT()), player);
+                        });
+                    });
+                });
+            });
         }
 
         if (attacker instanceof LivingEntity livingAttacker) {
@@ -803,14 +1256,68 @@ public class ModEvents {
         }
 
         if (currentHP <= 0) {
-            if (attacker instanceof LivingEntity) {
-                MinecraftForge.EVENT_BUS.post(new DeathHandlerEvent(target, null, (LivingEntity) attacker));
+            if (independentTargetStats.getIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE) >= 1) {
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect) {
+                                    ((ICustomStatusEffect) copiedEffect).onDeathDefiance(target);
+                                }
+                            }
+                        }}
+                });
+                if (target.getItemBySlot(EquipmentSlot.OFFHAND).getItem() == Items.TOTEM_OF_UNDYING && target.getItemBySlot(EquipmentSlot.MAINHAND).getItem() == Items.TOTEM_OF_UNDYING) {
+                    independentTargetStats.setIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE, independentTargetStats.getIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE) + 1);
+                }
+                independentTargetStats.setIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE, independentTargetStats.getIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE) - 1);
+
+                independentTargetStats.setIndependentStat(IndependentStatType.INVULNERABLE_TIME, targetStats.getFinalStat(StatType.INVULNERABLE_DURATION) * 5);
+
+                independentTargetStats.setIndependentStat(IndependentStatType.HEALTH, Math.max(0.01, targetStats.getFinalStat(StatType.MAX_HEALTH) * targetStats.getFinalStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE)));
+                RegistryAccess registryAccess1 = level.registryAccess();
+                Registry<DamageType> damageTypeRegistry1 = registryAccess1.registryOrThrow(Registries.DAMAGE_TYPE);
+                Holder<DamageType> damageHolder1 = damageTypeRegistry1.getHolderOrThrow(DamageTypes.GENERIC);
+                DamageSource damageSourceFinal1 = new DamageSource(damageHolder1, (Vec3) null);
+                target.hurt(damageSourceFinal1, 0.01F);
+
+                level.playSound(null, x, y +1, z, SoundEvents.TOTEM_USE, SoundSource.PLAYERS, 1.3F, 0.5F);
+                if (level instanceof ServerLevel serverLevel) {
+                    serverLevel.sendParticles(ParticleTypes.TOTEM_OF_UNDYING, target.getX(), target.getY() + 1, target.getZ(), (int) (Math.random() * 8 + 8), 0, 0, 0, 0.2);
+                }
+
+            } else if (attacker instanceof LivingEntity finalAttacker1) {
+                MinecraftForge.EVENT_BUS.post(new DeathHandlerEvent(target, null, finalAttacker1));
+
+                attacker.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onKill(finalAttacker1, target);
+                                }
+                            }
+                        }}
+                });
+
             } else {
                 MinecraftForge.EVENT_BUS.post(new DeathHandlerEvent(target, source, null));
             }
-            System.out.println(target.getName().getString() + " is gonna die.");
         } else {
-            System.out.println(target.getName().getString() + "'s hp is now " + currentHP);
+
+            if (target.getControllingPassenger() instanceof Player player) {
+                double finalCurrentHP1 = currentHP;
+                player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                    statsP.setMountMaxHealth(maxHealth);
+                    statsP.setMountHealth(finalCurrentHP1);
+                    player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> statsI.setIndependentStat(IndependentStatType.STAT_RECALCULATION_TIME, 1));
+                });
+            }
             independentTargetStats.setIndependentStat(IndependentStatType.HEALTH, currentHP);
             independentTargetStats.setIndependentStat(IndependentStatType.SHIELD, shield);
             RegistryAccess registryAccess1 = level.registryAccess();
@@ -818,6 +1325,14 @@ public class ModEvents {
             Holder<DamageType> damageHolder1 = damageTypeRegistry1.getHolderOrThrow(DamageTypes.GENERIC);
             DamageSource damageSourceFinal1 = new DamageSource(damageHolder1, (Vec3) null);
             target.hurt(damageSourceFinal1, 0.01F);
+
+            if (target.getControllingPassenger() instanceof Player player) {
+                double finalCurrentHP = currentHP;
+                player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                    statsP.setMountHealth(finalCurrentHP);
+                    player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> statsI.setIndependentStat(IndependentStatType.STAT_RECALCULATION_TIME, 1));
+                });
+            }
         }
 
 
@@ -876,8 +1391,6 @@ public class ModEvents {
 
         indicator.setInvulnerable(true);
 
-        System.out.println("[DEBUG] Initialised Indicator.");
-
         indicator.getTags().remove("indicatorToInitialise");
 
     }
@@ -900,6 +1413,18 @@ public class ModEvents {
         double selfDmg = event.getAmount() * selfDmgAmp;
         double hp = stats.getIndependentStat(IndependentStatType.HEALTH);
         double newHp = max(0.01, hp - selfDmg);
+
+            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+            if (!stats.getActiveEffectList().isEmpty()) {
+                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                    if (effectMap.containsKey(copiedEffect)) {
+                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                            ((ICustomStatusEffect) copiedEffect).onHealthConsumption(target, hp - newHp);
+                        }
+                    }
+                }}
+
         stats.setIndependentStat(IndependentStatType.HEALTH, newHp);
     }
 
@@ -924,12 +1449,43 @@ public class ModEvents {
         IFinalStats stats = statsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
         IIndependentStats independentStats = independentStatsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
 
+        boolean showVanillaDeathMessages =  target.level().getGameRules().getBoolean(GameRules.RULE_SHOWDEATHMESSAGES);
+        if (showVanillaDeathMessages) {
+            target.level().getGameRules().getRule(GameRules.RULE_SHOWDEATHMESSAGES).set(false, target.getServer());
+        }
+
         double maxHealth = stats.getFinalStat(StatType.MAX_HEALTH);
         independentStats.setIndependentStat(IndependentStatType.HEALTH, maxHealth);
         independentStats.setIndependentStat(IndependentStatType.SHIELD, 0);
         independentStats.setIndependentStat(IndependentStatType.BOND_OF_LIFE, 0);
         target.invulnerableTime = 0;
 
+        if (target.getControllingPassenger() instanceof Player player) {
+            player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                statsP.setMountHealth(0);
+                statsP.setMountHealth(0);
+                statsP.setMount(null);
+                player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> statsI.setIndependentStat(IndependentStatType.STAT_RECALCULATION_TIME, 1));
+            });
+        }
+
+
+        Map<MobEffect, StatusEffectInstanceEntry> effectMap = independentStats.getActiveEffectList();
+        if (!independentStats.getActiveEffectList().isEmpty()) {
+            for (MobEffect copiedEffect : (new HashMap<>(independentStats.getActiveEffectList())).keySet()) {
+                if (copiedEffect instanceof ICustomStatusEffect) {
+                    if (effectMap.containsKey(copiedEffect)) {
+                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                        if (effectInstance.isInitialised()) {
+                            ((ICustomStatusEffect) copiedEffect).onDeath(target);
+                            independentStats.removeActiveEffect(copiedEffect, target);
+                        }
+                    }
+                }
+            }
+        }
+
+        boolean  showCustomDeathMessages = target.level().getGameRules().getBoolean(ModGameRules.SHOW_CUSTOM_DEATH_MESSAGES);
         if (killer == null) {
             if (source == null) {
                 RegistryAccess registryAccess = level.registryAccess();
@@ -937,6 +1493,11 @@ public class ModEvents {
                 Holder<DamageType> damageHolder = damageTypeRegistry.getHolderOrThrow(DamageTypes.GENERIC);
                 DamageSource damageSourceFinal = new DamageSource(damageHolder, (Vec3) null);
                 target.hurt(damageSourceFinal, Float.MAX_VALUE);
+                if (target instanceof ServerPlayer player && showCustomDeathMessages) {
+                    String message = player.getGameProfile().getName() + " died.";
+                    if (target.getServer() == null) return;
+                    target.getServer().getPlayerList().broadcastSystemMessage(Component.literal(message).withStyle(ChatFormatting.RED), false);
+                }
             } else {
                 Holder<DamageType> type = source.typeHolder();
                 RegistryAccess registryAccess = level.registryAccess();
@@ -944,7 +1505,7 @@ public class ModEvents {
                 Holder<DamageType> damageHolder = damageTypeRegistry.getHolderOrThrow(DamageTypes.GENERIC);
                 DamageSource damageSourceFinal = new DamageSource(damageHolder, (Vec3) null);
                 target.hurt(damageSourceFinal, Float.MAX_VALUE);
-                if (!(target instanceof ServerPlayer)) return;
+                if (!(target instanceof ServerPlayer) || !showCustomDeathMessages) return;
                 if (target.getServer() == null) return;
                 if (type == DamageTypes.WITHER || type == DamageTypes.WITHER_SKULL) {
                     String message = ((ServerPlayer) target).getGameProfile().getName() + " withered away.";
@@ -989,7 +1550,7 @@ public class ModEvents {
                     String message = ((ServerPlayer) target).getGameProfile().getName() + " is bad at the floor is lava.";
                     target.getServer().getPlayerList().broadcastSystemMessage(Component.literal(message).withStyle(ChatFormatting.RED), false);
                 } else if (type == damageTypeRegistry.getHolderOrThrow(DamageTypes.CACTUS) || type == damageTypeRegistry.getHolderOrThrow(DamageTypes.SWEET_BERRY_BUSH)) {
-                    String message = ((ServerPlayer) target).getGameProfile().getName() + "was prickled to death.";
+                    String message = ((ServerPlayer) target).getGameProfile().getName() + " was prickled to death.";
                     target.getServer().getPlayerList().broadcastSystemMessage(Component.literal(message).withStyle(ChatFormatting.RED), false);
                 } else if (type == damageTypeRegistry.getHolderOrThrow(DamageTypes.FELL_OUT_OF_WORLD)) {
                     String message = ((ServerPlayer) target).getGameProfile().getName() + " fell out of the world.";
@@ -1018,7 +1579,7 @@ public class ModEvents {
             Holder<DamageType> damageHolder = damageTypeRegistry.getHolderOrThrow(DamageTypes.MOB_ATTACK);
             DamageSource damageSourceFinal = new DamageSource(damageHolder, killer);
             target.hurt(damageSourceFinal, Float.MAX_VALUE);
-            if (!(target instanceof ServerPlayer)) return;
+            if (!(target instanceof ServerPlayer)|| !showCustomDeathMessages) return;
             int max = DeathMessageByEntity.values().length;
             int ordinal = (int) (Math.random() * max);
             DeathMessageByEntity messageOrdinal = DeathMessageByEntity.values()[ordinal];
@@ -1376,7 +1937,6 @@ public class ModEvents {
         LazyOptional<IAddStats> addStatsL = entity.getCapability(ModCapabilities.ADD_STATS);
         if (!addStatsL.isPresent()) return;
         IAddStats addStats = addStatsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
-        System.out.println("[DEBUG] Changed Equipment. Actual Defense: " + addStats.getAddStat(StatType.ARMOR));
         LazyOptional<IDirtyStats> dirtyStatsL = entity.getCapability(ModCapabilities.DIRTY_STATS);
         if (!dirtyStatsL.isPresent()) return;
         IDirtyStats dirtyStats = dirtyStatsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
@@ -1394,6 +1954,7 @@ public class ModEvents {
         dirtyStats.setDirtyStat(StatType.ELEMENTAL_AFFINITY, true);
         dirtyStats.setDirtyStat(StatType.ELEMENTAL_MASTERY, true);
         dirtyStats.setDirtyStat(StatType.MAX_HEALTH, true);
+        dirtyStats.setDirtyStat(StatType.ADDITIONAL_JUMP, true);
     }
 
     @SubscribeEvent
@@ -1441,9 +2002,9 @@ public class ModEvents {
                 independentStats.setIndependentStat(IndependentStatType.REGENERATION_CALCULATION, calculations * (1 + hungerMult));
                 if (calculations >= 160) {
                     if (saturation > 0) {
-                        ((Player) entity).getFoodData().setSaturation(Math.max(0, saturation - 1));
+                        ((Player) entity).getFoodData().setSaturation(max(0, saturation - 1));
                     } else {
-                        ((Player) entity).getFoodData().setFoodLevel(Math.max(0, food - 1));
+                        ((Player) entity).getFoodData().setFoodLevel(max(0, food - 1));
                     }
                     independentStats.setIndependentStat(IndependentStatType.REGENERATION_CALCULATION, 0);
                 }
@@ -1509,11 +2070,21 @@ public class ModEvents {
         IIndependentStats stats = statsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
         IFinalStats finalStats = finalStatsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
         double dashTime = stats.getIndependentStat(IndependentStatType.DASH_TIME);
+
+        entity.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+            if (statsP.getMilkDrinkingTime() > 0) {
+                statsP.setMilkDrinkingTime(statsP.getMilkDrinkingTime() - 1);
+            }
+        });
+
+        if (stats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE) < finalStats.getFinalStat(StatType.DASH_COUNT)) {
         if (dashTime > 0) {
             stats.setIndependentStat(IndependentStatType.DASH_TIME, (int) (dashTime - 1));
-        } else if (stats.getIndependentStat(IndependentStatType.DASH_AVAILABLE) < (int) finalStats.getFinalStat(StatType.DASH_COUNT)) {
-            stats.setIndependentStat(IndependentStatType.DASH_AVAILABLE, stats.getIndependentStat(IndependentStatType.DASH_AVAILABLE) + 1);
+        } else if (stats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE) < (int) finalStats.getFinalStat(StatType.DASH_COUNT)) {
+            stats.setIndependentStat(IndependentStatType.DASHES_AVAILABLE, stats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE) + 1);
             stats.setIndependentStat(IndependentStatType.DASH_TIME, (int) finalStats.getFinalStat(StatType.DASH_COOLDOWN));
+        }} else {
+            stats.setIndependentStat(IndependentStatType.DASH_TIME, finalStats.getFinalStat(StatType.DASH_COOLDOWN));
         }
     }
 
@@ -1532,6 +2103,20 @@ public class ModEvents {
             int shieldDuration =(int) independentStats.getIndependentStat(IndependentStatType.SHIELD_TIME);
             if (shieldDuration <= 0) {
                 independentStats.setIndependentStat(IndependentStatType.SHIELD, 0);
+
+                entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onShieldDecay(entity);
+                                }
+                            }
+                        }}
+                });
+
             } else {
                 independentStats.setIndependentStat(IndependentStatType.SHIELD_TIME,shieldDuration - 1);
             }
@@ -1595,11 +2180,41 @@ public class ModEvents {
         IMultStats multStats = multStatsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
         IFinalStats finalStats = finalStatsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
 
+        for (Holder<MobEffect> holder : new HashSet<>(entity.getActiveEffectsMap().keySet())) {
+            if (holder.is(ModTags.STACKABLE_EFFECT) || holder.is(ModTags.UNDISPELLABLE_EFFECTS) || holder.is(ModTags.NEUTRAL_EFFECTS) || holder.is(ModTags.DEBUFFS) || holder.is(ModTags.CC_DEBUFFS) || holder.is(ModTags.EFFECTS_NOT_SHOWN_IN_GUI) || holder.is(ModTags.BUFFS) || holder.is(ModTags.DOT_EFFECTS) || holder.is(ModTags.SPECIAL_BUFFS) || holder.is(ModTags.SPECIAL_DEBUFFS) || holder.is(ModTags.SPECIAL_NEUTRAL_EFFECT)) {
+                entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
+                    if (!statsI.getActiveEffectList().containsKey(holder.get())) {
+                        entity.removeEffect(holder);
+                    }
+                });
+            } else {
+                entity.removeEffect(holder);
+            }
+        }
+
+        if (independentStats.getActiveEffectList().containsKey(MobEffects.WATER_BREATHING.get()) || independentStats.getActiveEffectList().containsKey(MobEffects.CONDUIT_POWER.get())) {
+            entity.setAirSupply(entity.getMaxAirSupply());
+        }
+
+        if (independentStats.getIndependentStat(IndependentStatType.HEALTH) > finalStats.getFinalStat(StatType.MAX_HEALTH)) {
+            independentStats.setIndependentStat(IndependentStatType.HEALTH, finalStats.getFinalStat(StatType.MAX_HEALTH));
+        }
+
         ItemStack weapon = ItemStack.EMPTY;
         Item mainItem;
         Item offItem;
         ItemStack mainHandItem = entity.getMainHandItem();
         ItemStack offHandItem = entity.getOffhandItem();
+
+        if (entity instanceof Player player) {
+            if (player.isSprinting()) {
+                baseStats.setBaseStat(StatType.MOVEMENT_SPEED, 2.75);
+                dirtyStats.setDirtyStat(StatType.MOVEMENT_SPEED, true);
+            } else {
+                baseStats.setBaseStat(StatType.MOVEMENT_SPEED, 2);
+                dirtyStats.setDirtyStat(StatType.MOVEMENT_SPEED, true);
+            }
+        }
 
         if (!mainHandItem.isEmpty()) {
             mainItem = mainHandItem.getItem();
@@ -1631,7 +2246,23 @@ public class ModEvents {
             }
         }
 
-        if (entity instanceof Player) {
+        boolean hasInfusionEffect = false;
+
+        for (MobEffect effect : new HashSet<>(independentStats.getActiveEffectList().keySet())) {
+            Optional<ResourceKey<MobEffect>> optionalKey = BuiltInRegistries.MOB_EFFECT.getResourceKey(effect);
+            if (optionalKey.isPresent()) {
+                Optional<Holder.Reference<MobEffect>> optionalHolder = BuiltInRegistries.MOB_EFFECT.getHolder(optionalKey.get().location());
+                if (optionalHolder.isPresent()) {
+                    Holder<MobEffect> holder = optionalHolder.get();
+                    if (holder.is(ModTags.ELEMENTAL_INFUSION_EFFECT)) {
+                        hasInfusionEffect = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (entity instanceof Player && !hasInfusionEffect) {
         if (weapon.getItem() == Items.WOODEN_AXE || weapon.getItem() == Items.WOODEN_SHOVEL || weapon.getItem() == Items.WOODEN_SWORD || weapon.getItem() == Items.WOODEN_HOE || weapon.getItem() == Items.WOODEN_PICKAXE) {
             independentStats.setElementType(ElementType.NATURE);
         } else if (weapon.getItem() == Items.STONE_AXE || weapon.getItem() == Items.STONE_SHOVEL || weapon.getItem() == Items.STONE_SWORD || weapon.getItem() == Items.STONE_HOE || weapon.getItem() == Items.STONE_PICKAXE) {
@@ -1692,11 +2323,12 @@ public class ModEvents {
 
         for (StatType stat : Arrays.stream(statList).toList()) {
             if (dirtyStats.getDirtyStat(stat)) {
-                double multStat = Math.max(0, multStats.getMultStat(stat));
+                double multStat = max(0, multStats.getMultStat(stat));
 
 
                 if ((stat == StatType.ATK_SPEED) || (stat == StatType.ATK_COOLDOWN)) {
                     double atkSpeed = (baseStats.getBaseStat(StatType.ATK_SPEED) + addStats.getAddStat(StatType.ATK_SPEED) * multStats.getMultStat(StatType.ATK_SPEED));
+                    atkSpeed = Math.max(Math.min(atkSpeed, stat.getMaxValue()), stat.getMinValue());
                     finalStats.setFinalStat(StatType.ATK_SPEED, atkSpeed);
                     double atkCooldown = (baseStats.getBaseStat(StatType.ATK_COOLDOWN) + addStats.getAddStat(StatType.ATK_COOLDOWN)) * multStats.getMultStat(StatType.ATK_COOLDOWN) / (1 + finalStats.getFinalStat(StatType.ATK_SPEED));
                     finalStats.setFinalStat(StatType.ATK_COOLDOWN, atkCooldown);
@@ -1704,46 +2336,77 @@ public class ModEvents {
                     dirtyStats.setDirtyStat(StatType.ATK_COOLDOWN, false);
                 } else if (stat == StatType.ELEMENTAL_AFFINITY) {
                     double newStat = (baseStats.getBaseStat(stat) + addStats.getAddStat(stat)) * multStat;
+                    newStat = Math.max(Math.min(newStat, stat.getMaxValue()), stat.getMinValue());
                     newStat = Math.min(200, newStat);
                     finalStats.setFinalStat(stat, newStat);
                     dirtyStats.setDirtyStat(stat, false);
                     int reactionCooldown = (int) (40 - 19 * newStat);
-                    reactionCooldown = Math.max(2, reactionCooldown);
+                    reactionCooldown = max(2, reactionCooldown);
 
                     independentStats.setIndependentStat(IndependentStatType.REACTION_COOLDOWN, reactionCooldown);
                 } else if (stat == StatType.MOVEMENT_SPEED) {
                     double newStat = (baseStats.getBaseStat(stat) + addStats.getAddStat(stat)) * multStat;
+                    newStat = Math.max(Math.min(newStat, stat.getMaxValue()), stat.getMinValue());
                     finalStats.setFinalStat(stat, newStat);
                     dirtyStats.setDirtyStat(stat, false);
                     if (entity.getAttribute(Attributes.MOVEMENT_SPEED) != null) {
-                        Objects.requireNonNull(entity.getAttribute(Attributes.MOVEMENT_SPEED)).setBaseValue(newStat / 20);
+                        Objects.requireNonNull(entity.getAttribute(Attributes.MOVEMENT_SPEED)).addOrReplacePermanentModifier( new AttributeModifier(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "speed"), newStat / 2 - 1, AttributeModifier.Operation.ADD_MULTIPLIED_BASE));
                     }
                      } else if (stat == StatType.MAX_HEALTH) {
                     double oldStat = finalStats.getFinalStat(StatType.MAX_HEALTH);
                 double newStat = (baseStats.getBaseStat(stat) + addStats.getAddStat(stat)) * multStat;
+                    newStat = Math.max(Math.min(newStat, stat.getMaxValue()), stat.getMinValue());
                 finalStats.setFinalStat(stat, newStat);
-                independentStats.setIndependentStat(IndependentStatType.HEALTH, independentStats.getIndependentStat(IndependentStatType.HEALTH)*newStat/oldStat);
+                double newHP = independentStats.getIndependentStat(IndependentStatType.HEALTH)*newStat/oldStat;
+                independentStats.setIndependentStat(IndependentStatType.HEALTH, newHP);
                 dirtyStats.setDirtyStat(stat, false);
                 baseStats.setBaseStat(StatType.MAX_BOND_OF_LIFE, 2 * newStat);
                 dirtyStats.setDirtyStat(StatType.MAX_BOND_OF_LIFE, true);
+
+                if (entity.getControllingPassenger() instanceof Player player) {
+                    double finalNewStat = newStat;
+                    player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                        statsP.setMountMaxHealth(finalNewStat);
+                        statsP.setMountHealth(newHP);
+                        player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> statsI.setIndependentStat(IndependentStatType.STAT_RECALCULATION_TIME, 1));
+                    });
+                }
             } else if (stat == StatType.MAX_BOND_OF_LIFE) {
                     double newStat = (baseStats.getBaseStat(stat) + addStats.getAddStat(stat))* multStat;
+                    newStat = Math.max(Math.min(newStat, stat.getMaxValue()), stat.getMinValue());
                     double oldStat = finalStats.getFinalStat(stat);
                     finalStats.setFinalStat(StatType.MAX_BOND_OF_LIFE, newStat);
                     independentStats.setIndependentStat(IndependentStatType.BOND_OF_LIFE, independentStats.getIndependentStat(IndependentStatType.BOND_OF_LIFE) * newStat/oldStat);
-                } else {
+                } else if (stat == StatType.MAX_MANA) {
+                    double oldStat = finalStats.getFinalStat(StatType.MAX_MANA);
                     double newStat = (baseStats.getBaseStat(stat) + addStats.getAddStat(stat)) * multStat;
-                    if (stat.getShouldBeTruncated()) {
-                        finalStats.setFinalStat(stat, (int) newStat);
-                    } else {
-                        finalStats.setFinalStat(stat, newStat);
-                    }
+                    newStat = Math.max(Math.min(newStat, stat.getMaxValue()), stat.getMinValue());
+                    finalStats.setFinalStat(stat, newStat);
+                    double newMana= independentStats.getIndependentStat(IndependentStatType.MANA)*newStat/oldStat;
+                    independentStats.setIndependentStat(IndependentStatType.MANA, newMana);
                     dirtyStats.setDirtyStat(stat, false);
+                } else {
+                        double newStat = (baseStats.getBaseStat(stat) + addStats.getAddStat(stat)) * multStat;
+                        newStat = Math.max(Math.min(newStat, stat.getMaxValue()), stat.getMinValue());
+                        if (stat.getShouldBeTruncated()) {
+                            finalStats.setFinalStat(stat, (int) newStat);
+                        } else {
+                            finalStats.setFinalStat(stat, newStat);
+                        }
+                        dirtyStats.setDirtyStat(stat, false);
                 }
             }
         }
         if (entity instanceof ServerPlayer player) {
-            ModNetworking.sendToPlayer(new ClientStatReceiver(independentStats.getIndependentStatMap(), player.getFoodData().getSaturationLevel(), independentStats.getElementType(), independentStats.getWeapon(), finalStats.getFinalStatMap()), player);
+            player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                player.getCapability(ModCapabilities.BASE_STATS).ifPresent(statsB -> {
+                    player.getCapability(ModCapabilities.ADD_STATS).ifPresent(statsA -> {
+                        player.getCapability(ModCapabilities.MULT_STATS).ifPresent(statsM -> {
+                            ModNetworking.sendToPlayer(new ClientStatReceiver(player.getFoodData().getSaturationLevel(), independentStats.serializeNBT(), finalStats.serializeNBT(), statsP.serializeNBT(), statsB.serializeNBT(), statsA.serializeNBT(), statsM.serializeNBT()), player);
+                        });
+                    });
+                });
+            });
         }
     }
 
@@ -1767,7 +2430,7 @@ public class ModEvents {
         double incomingHealAmp = targetStats.getFinalStat(StatType.INCOMING_HEALING_AMP);
 
         if (healer == null) {
-            double healMult = healAmount * incomingHealAmp;
+             double healMult = healAmount * incomingHealAmp;
             if (healMult <= bondOfLife) {
                 double finalBondOfLife = bondOfLife - healMult;
                 independentStats.setIndependentStat(IndependentStatType.BOND_OF_LIFE, finalBondOfLife);
@@ -1805,11 +2468,41 @@ public class ModEvents {
                 armorStand.setShowArms(false);
                 level.addFreshEntity(armorStand);
 
+
             } else {
                 double finalHeal = healMult - bondOfLife;
                 double incomingHeal = Math.min(health + finalHeal, maxHealth);
                 independentStats.setIndependentStat(IndependentStatType.HEALTH, incomingHeal);
+
+                double healToEffect = incomingHeal - health;
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onBeingHealed(target, null, healToEffect);
+                                }
+                            }
+                        }}
+                });
+
                 if (bondOfLife > 0) {
+
+                    target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onBondOfLifeDispel(target);
+                                    }
+                                }
+                            }}
+                    });
+
                     double xb = target.getX();
                     double yb = target.getY();
                     double zb = target.getZ();
@@ -1879,6 +2572,15 @@ public class ModEvents {
                 armorStand.setShowArms(false);
                 level.addFreshEntity(armorStand);
 
+
+                if (target.getControllingPassenger() instanceof Player player) {
+                    double finalIncomingHeal = incomingHeal;
+                    player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                        statsP.setMountHealth(finalIncomingHeal);
+                        player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> statsI.setIndependentStat(IndependentStatType.STAT_RECALCULATION_TIME, 1));
+                    });
+                }
+
             }
         } else {
             LazyOptional<IFinalStats> healerStatsL = healer.getCapability(ModCapabilities.FINAL_STATS);
@@ -1927,7 +2629,48 @@ public class ModEvents {
                 double incomingHeal = Math.min(health + finalHeal, maxHealth);
                 independentStats.setIndependentStat(IndependentStatType.HEALTH, incomingHeal);
 
+                double finalIncomingHeal = incomingHeal - health;
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onBeingHealed(target, healer, finalIncomingHeal);
+                                }
+                            }
+                        }}
+                });
+
+                healer.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onHeal(healer, target, finalIncomingHeal);
+                                }
+                            }
+                        }}
+                });
+
                 if (bondOfLife > 0) {
+
+                    target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onBondOfLifeDispel(target);
+                                    }
+                                }
+                            }}
+                    });
+
                     double xb = target.getX();
                     double yb = target.getY();
                     double zb = target.getZ();
@@ -1997,6 +2740,14 @@ public class ModEvents {
                 armorStand.setNoBasePlate(true);
                 armorStand.setShowArms(false);
                 level.addFreshEntity(armorStand);
+
+                if (target.getControllingPassenger() instanceof Player player) {
+                    double finalIncomingHeal1 = incomingHeal;
+                    player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                        statsP.setMountHealth(finalIncomingHeal1);
+                        player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> statsI.setIndependentStat(IndependentStatType.STAT_RECALCULATION_TIME, 1));
+                    });
+                }
             }
         }
     }
@@ -2019,6 +2770,35 @@ public class ModEvents {
         double eventBondOfLife = event.getBondOfLife();
         double bondOfLife = Math.min(targetStats.getFinalStat(StatType.MAX_BOND_OF_LIFE), initialBondOfLife + eventBondOfLife);
         double newBondOfLife = bondOfLife - initialBondOfLife;
+
+        double finalNewBondOfLife = newBondOfLife;
+        target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+            if (!stats.getActiveEffectList().isEmpty()) {
+                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                    if (effectMap.containsKey(copiedEffect)) {
+                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                            ((ICustomStatusEffect) copiedEffect).onBoundByLife(target, null, finalNewBondOfLife - stats.getIndependentStat(IndependentStatType.BOND_OF_LIFE));
+                        }
+                    }
+                }}
+        });
+
+        if (event.getApplier() instanceof LivingEntity applier) {
+            applier.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                if (!stats.getActiveEffectList().isEmpty()) {
+                    for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                        if (effectMap.containsKey(copiedEffect)) {
+                            StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                            if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                ((ICustomStatusEffect) copiedEffect).onBindByLife(applier, target, finalNewBondOfLife - stats.getIndependentStat(IndependentStatType.BOND_OF_LIFE));
+                            }
+                        }
+                    }}
+            });
+        }
 
         independentStats.setIndependentStat(IndependentStatType.BOND_OF_LIFE, bondOfLife);
         System.out.println("[DEBUG] Created Bond of Life. New value: " + bondOfLife + ". Maximum value: " + targetStats.getFinalStat(StatType.MAX_BOND_OF_LIFE));
@@ -2086,6 +2866,20 @@ public class ModEvents {
                 independentStats.setIndependentStat(IndependentStatType.SHIELD, shieldMult);
                 independentStats.setIndependentStat(IndependentStatType.SHIELD_TIME, newDuration);
 
+                double finalShieldMult = shieldMult;
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReceivingShield(target, null, finalShieldMult);
+                                }
+                            }
+                        }}
+                });
+
                 double x = target.getX();
                 double y = target.getY();
                 double z = target.getZ();
@@ -2137,6 +2931,20 @@ public class ModEvents {
                 independentStats.setIndependentStat(IndependentStatType.SHIELD, shieldMult);
                 independentStats.setIndependentStat(IndependentStatType.SHIELD_TIME, newDuration);
 
+                double finalShieldMult = shieldMult;
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onReceivingShield(target, shieldProvider, finalShieldMult);
+                                }
+                            }
+                        }}
+                });
+
                 double x = target.getX();
                 double y = target.getY();
                 double z = target.getZ();
@@ -2175,68 +2983,216 @@ public class ModEvents {
     }
 
     @SubscribeEvent
-    public static void EffectCastingEvent(EffectCastingEvent event) {
+    public static void EffectApplicationEvent(EffectApplicationEvent event) {
         Level level = event.getTarget().level();
         if (level.isClientSide) return;
         LivingEntity target = event.getTarget();
         LivingEntity caster = event.getCaster();
-        MobEffect effect = event.getEffect().get();
+        MobEffect effect = event.getEffect();
         if (target == null) return;
         LazyOptional<IFinalStats> targetStatsL = target.getCapability(ModCapabilities.FINAL_STATS);
-        if (!targetStatsL.isPresent()) return;
+        LazyOptional<IIndependentStats> targetStatsLI = target.getCapability(ModCapabilities.INDEPENDENT_STATS);
+        if (!targetStatsL.isPresent() || !targetStatsLI.isPresent()) return;
+        System.out.println("Applying status effect to " + target.getName());
         IFinalStats targetStats = targetStatsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
+        IIndependentStats targetStatsI = targetStatsLI.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
         if (caster == null) {
             double baseChance = event.getEffectChance();
             double effectRes = targetStats.getFinalStat(StatType.EFFECT_RES);
-            int duration = event.getEffectDuration();
-            int amplifier = event.getEffectAmp();
             double effectChance;
-            if (!effect.isBeneficial()) {
-                if (effect instanceof ICCDebuff) {
-                    baseChance -= targetStats.getFinalStat(StatType.CC_RES);
-                }
-                effectChance = baseChance - effectRes;
+            if (event.getIsCertain()) {
+
+                target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                    Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                    if (!stats.getActiveEffectList().isEmpty()) {
+                        for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                            if (effectMap.containsKey(copiedEffect)) {
+                                StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                    ((ICustomStatusEffect) copiedEffect).onEffectReception(target, null, event.getEffect());
+                                }
+                            }
+                        }}
+                });
+
+                targetStatsI.addActiveEffectEntry(event.getEffect(), new StatusEffectInstanceEntry(event.getEffectDuration(), event.getEffectAmp(), event.getStacks(), event.getMaxStacks(), null, new CompoundTag(), false), target);
             } else {
-                effectChance = baseChance;
-            }
-            double chance = Math.random();
-            if (chance <= effectChance) {
-                if (event.getEffect().getKey() != null) {
-                    Holder<MobEffect> effectHolder = BuiltInRegistries.MOB_EFFECT.getHolderOrThrow(event.getEffect().getKey());
-                    target.addEffect(new MobEffectInstance(effectHolder, duration, amplifier));
+
+                BuiltInRegistries.MOB_EFFECT.getResourceKey(effect).ifPresent(key -> {
+                    double finalBaseChance = baseChance;
+                    double finalEffectChance;
+                if (key.getOrThrow(target).is(ModTags.DEBUFFS)) {
+                    if (key.getOrThrow(target).is(ModTags.CC_DEBUFFS)) {
+                        finalBaseChance -= targetStats.getFinalStat(StatType.CC_RES);
+                    }
+                    finalEffectChance = finalBaseChance - effectRes;
+                } else {
+                    finalEffectChance = baseChance;
                 }
-            }
+                double chance = Math.random();
+                if (chance <= finalEffectChance) {
+
+                    target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onEffectReception(target, null, event.getEffect());
+                                    }
+                                }
+                            }}
+                    });
+
+                        targetStatsI.addActiveEffectEntry(event.getEffect(), new StatusEffectInstanceEntry(event.getEffectDuration(), event.getEffectAmp(), event.getStacks(), event.getMaxStacks(), null, new CompoundTag(), false), target);
+                } else {
+                    if (event.getEffect() instanceof ICustomStatusEffect customEffect) {
+                        customEffect.onThisEffectResist(target, null);
+                    }
+
+                    target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onEffectResist(target, null, event.getEffect());
+                                    }
+                                }
+                            }}
+                    });
+                }
+            });}
         } else {
             LazyOptional<IFinalStats> casterStatsL = caster.getCapability(ModCapabilities.FINAL_STATS);
             if (!casterStatsL.isPresent()) return;
             IFinalStats casterStats = casterStatsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
-            double baseChance = event.getEffectChance();
+            final double baseChance = event.getEffectChance();
             double effectRes = targetStats.getFinalStat(StatType.EFFECT_RES);
 
             double effectHitRate = casterStats.getFinalStat(StatType.EFFECT_HIT_RATE);
             double effectAmp = casterStats.getFinalStat(StatType.EFFECT_EFFICIENCY);
 
-            double effectChance;
-            int duration = event.getEffectDuration();
-            int amplifier = event.getEffectAmp();
-            if (!effect.isBeneficial()) {
-                if (effect instanceof ICCDebuff) {
-                    baseChance -= targetStats.getFinalStat(StatType.CC_RES);
-                    effectAmp *= casterStats.getFinalStat(StatType.CC_DEBUFF_EFFICIENCY);
-                }
-                if (!(effect instanceof IDoTDebuff)) {
-                    effectAmp *= casterStats.getFinalStat(StatType.NON_DAMAGING_DEBUFF_EFFICIENCY);
-                }
-                effectChance = baseChance - effectRes + effectHitRate;
+
+            if (event.getIsCertain()) {
+                BuiltInRegistries.MOB_EFFECT.getResourceKey(effect).ifPresent(key -> {
+                    double finalEffectAmp = effectAmp;
+                    if (key.getOrThrow(target).is(ModTags.CC_DEBUFFS)) {
+                        finalEffectAmp *= casterStats.getFinalStat(StatType.CC_DEBUFF_EFFICIENCY);
+                    }
+
+                    target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onEffectReception(target, caster, event.getEffect());
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    caster.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                        Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                        if (!stats.getActiveEffectList().isEmpty()) {
+                            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                if (effectMap.containsKey(copiedEffect)) {
+                                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                        ((ICustomStatusEffect) copiedEffect).onEffectApplication(caster, target, event.getEffect());
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    targetStatsI.addActiveEffectEntry(event.getEffect(), new StatusEffectInstanceEntry(((int) (event.getEffectDuration() * casterStats.getFinalStat(StatType.EFFECT_DURATION))), event.getEffectAmp() * finalEffectAmp, event.getStacks(), event.getMaxStacks(), caster.getUUID(), new CompoundTag(), false), target);
+                });
             } else {
-                effectChance = baseChance + effectHitRate;
-            }
-            double chance = Math.random();
-            if (chance <= effectChance) {
-                if (event.getEffect().getKey() != null) {
-                    Holder<MobEffect> effectHolder = BuiltInRegistries.MOB_EFFECT.getHolderOrThrow(event.getEffect().getKey());
-                    target.addEffect(new MobEffectInstance(effectHolder, (int) (duration * effectAmp), (int) (amplifier * casterStats.getFinalStat(StatType.EFFECT_DURATION))));
-                }
+                BuiltInRegistries.MOB_EFFECT.getResourceKey(effect).ifPresent(key -> {
+                    double finalBaseChance = baseChance;
+                    double finalEffectAmp = effectAmp;
+                    double effectChance;
+                    if (key.getOrThrow(target).is(ModTags.DEBUFFS)) {
+                        if (key.getOrThrow(target).is(ModTags.CC_DEBUFFS)) {
+                            finalBaseChance -= targetStats.getFinalStat(StatType.CC_RES);
+                            finalEffectAmp *= casterStats.getFinalStat(StatType.CC_DEBUFF_EFFICIENCY);
+                        }
+                        if (!(key.getOrThrow(target).is(ModTags.DOT_EFFECTS))) {
+                            finalEffectAmp *= casterStats.getFinalStat(StatType.NON_DAMAGING_DEBUFF_EFFICIENCY);
+                        }
+                        effectChance = finalBaseChance - effectRes + effectHitRate;
+                    } else {
+                        effectChance = baseChance + effectHitRate;
+                    }
+                    double chance = Math.random();
+                    if (chance <= effectChance) {
+
+                        target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                            if (!stats.getActiveEffectList().isEmpty()) {
+                                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                    if (effectMap.containsKey(copiedEffect)) {
+                                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                            ((ICustomStatusEffect) copiedEffect).onEffectReception(target, caster, event.getEffect());
+                                        }
+                                    }
+                                }}
+                        });
+
+                        caster.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                            if (!stats.getActiveEffectList().isEmpty()) {
+                                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                    if (effectMap.containsKey(copiedEffect)) {
+                                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                            ((ICustomStatusEffect) copiedEffect).onEffectApplication(caster, target, event.getEffect());
+                                        }
+                                    }
+                                }}
+                        });
+
+                        targetStatsI.addActiveEffectEntry(event.getEffect(), new StatusEffectInstanceEntry(((int) (event.getEffectDuration() * casterStats.getFinalStat(StatType.EFFECT_DURATION))), event.getEffectAmp() * finalEffectAmp, event.getStacks(), event.getMaxStacks(), caster.getUUID(), new CompoundTag(), false), target);
+                    } else {
+                        if (event.getEffect() instanceof ICustomStatusEffect customEffect) {
+                            customEffect.onThisEffectResist(target, caster);
+                            customEffect.onThisEffectBeingResisted(caster, target);
+                        }
+
+                        target.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                            if (!stats.getActiveEffectList().isEmpty()) {
+                                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                    if (effectMap.containsKey(copiedEffect)) {
+                                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                            ((ICustomStatusEffect) copiedEffect).onEffectResist(target, caster, event.getEffect());
+                                        }
+                                    }
+                                }}
+                        });
+
+                        caster.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                            if (!stats.getActiveEffectList().isEmpty()) {
+                                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                                    if (effectMap.containsKey(copiedEffect)) {
+                                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                            ((ICustomStatusEffect) copiedEffect).onEffectBeingResisted(caster, target, event.getEffect());
+                                        }
+                                    }
+                                }}
+                        });
+                    }
+                });
             }
         }
     }
@@ -2247,17 +3203,19 @@ public class ModEvents {
 
         if (entity.level().isClientSide()) return;
 
-        if (entity.isInWaterRainOrBubble() && !(ModEffects.WET_EFFECT.getKey() == null)) {
-            Holder<MobEffect> elementalHolder = BuiltInRegistries.MOB_EFFECT.getHolderOrThrow(ModEffects.WET_EFFECT.getKey());
-            entity.addEffect(new MobEffectInstance(elementalHolder, 120));
+        LazyOptional<IIndependentStats> targetStatsLI = entity.getCapability(ModCapabilities.INDEPENDENT_STATS);
+        if (!targetStatsLI.isPresent()) return;
+        IIndependentStats targetStatsI = targetStatsLI.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
+
+
+        if (entity.isInWaterRainOrBubble() && !targetStatsI.getActiveEffectList().containsKey(ModEffects.WET_EFFECT.get())) {
+            targetStatsI.addActiveEffectEntry(ModEffects.WET_EFFECT.get(), new StatusEffectInstanceEntry(120, 1, 0, 0, null, new CompoundTag(), false), entity);
         }
-        if (entity.isInPowderSnow && !(ModEffects.FROSTED_EFFECT.getKey() == null)) {
-            Holder<MobEffect> elementalHolder = BuiltInRegistries.MOB_EFFECT.getHolderOrThrow(ModEffects.FROSTED_EFFECT.getKey());
-            entity.addEffect(new MobEffectInstance(elementalHolder, 120));
+        if (entity.isInPowderSnow && !targetStatsI.getActiveEffectList().containsKey(ModEffects.FROSTED_EFFECT.get())) {
+            targetStatsI.addActiveEffectEntry(ModEffects.FROSTED_EFFECT.get(), new StatusEffectInstanceEntry(120, 1, 0, 0, null, new CompoundTag(), false), entity);
         }
-        if (entity.isInLava() && !(ModEffects.MOLTEN_EFFECT.getKey() == null)) {
-            Holder<MobEffect> elementalHolder = BuiltInRegistries.MOB_EFFECT.getHolderOrThrow(ModEffects.MOLTEN_EFFECT.getKey());
-            entity.addEffect(new MobEffectInstance(elementalHolder, 120));
+        if (entity.isInLava() && !targetStatsI.getActiveEffectList().containsKey(ModEffects.MOLTEN_EFFECT.get())) {
+            targetStatsI.addActiveEffectEntry(ModEffects.MOLTEN_EFFECT.get(), new StatusEffectInstanceEntry(120, 1, 0, 0, null, new CompoundTag(), false), entity);
         }
     }
 
@@ -2266,10 +3224,11 @@ public class ModEvents {
         Player player = event.getPlayer();
         Level level = event.getPlayer().level();
         if (player == null || (level.isClientSide())) return;
-        if (ModEffects.CREATIVE_SHOCK_EFFECT.getHolder().isPresent() && player.hasEffect(ModEffects.CREATIVE_SHOCK_EFFECT.getHolder().get())) {
+        player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
+            if (statsI.getActiveEffectList().containsKey(ModEffects.CREATIVE_SHOCK_EFFECT.get())) {
             event.setCanceled(true);
             player.level().playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.VILLAGER_NO, SoundSource.PLAYERS, 0.3F, 0.7F);
-        }
+            }});
     }
 
     @SubscribeEvent
@@ -2278,10 +3237,11 @@ public class ModEvents {
         if (player instanceof Player) {
             Level level = event.getEntity().level();
             if ((level.isClientSide())) return;
-            if (ModEffects.CREATIVE_SHOCK_EFFECT.getHolder().isPresent() && ((Player) player).hasEffect(ModEffects.CREATIVE_SHOCK_EFFECT.getHolder().get())) {
+            player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
+            if (statsI.getActiveEffectList().containsKey(ModEffects.CREATIVE_SHOCK_EFFECT.get())) {
                 event.setCanceled(true);
                 player.level().playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.VILLAGER_NO, SoundSource.PLAYERS, 0.3F, 0.7F);
-            }
+            }});
         }
     }
 
@@ -2291,9 +3251,15 @@ public class ModEvents {
             if (ModKeyBindings.DASH_KEY.consumeClick() && Minecraft.getInstance().screen == null) {
                 ModNetworking.sendToServer(new DashInputReceiver());
             }
-            if (Minecraft.getInstance().options.keyJump.consumeClick() && Minecraft.getInstance().screen == null) {
-                ModNetworking.sendToServer(new AdditionalJumpInputReceiver());
-            }
+            if (Minecraft.getInstance().player != null) {
+                Minecraft.getInstance().player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
+                    double jumps = statsI.getIndependentStat(IndependentStatType.ADDITIONAL_JUMPS_AVAILABLE);
+                    if (jumps > 0) {
+                        if (Minecraft.getInstance().options.keyJump.consumeClick() && Minecraft.getInstance().screen == null) {
+                            ModNetworking.sendToServer(new AdditionalJumpInputReceiver());
+                        }
+                    }
+                });}
             if (Minecraft.getInstance().options.keyUse.isDown() && Minecraft.getInstance().screen == null) {
                 ModNetworking.sendToServer(new InteractInputReceiver());
             }
@@ -2312,42 +3278,15 @@ public class ModEvents {
             IFinalStats stats = statsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
             IIndependentStats independentStats = independentStatsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
 
-            if (!player.isFallFlying() && !player.onGround() && !player.isInLiquid()) {
-                Vec3 mov = player.getDeltaMovement().add(0, 0.08 + stats.getFinalStat(StatType.GRAVITY_ACCELERATION) ,0);
-                player.setDeltaMovement(mov);
-                player.hurtMarked = true;
-            }
-
             if (!(player instanceof Player)) return;
             if (player.onGround() || player.isInLava() || player.isInWater()) {
                 player.getTags().add("onGround");
-                independentStats.setIndependentStat(IndependentStatType.ADDITIONAL_JUMP_AVAILABLE, (int) stats.getFinalStat(StatType.ADDITIONAL_JUMP));
+                independentStats.setIndependentStat(IndependentStatType.ADDITIONAL_JUMPS_AVAILABLE, (int) stats.getFinalStat(StatType.ADDITIONAL_JUMP));
 
             } else {
                 player.getTags().remove("onGround");
             }
         }
-    }
-
-    @SubscribeEvent
-    public static void onJump (LivingEvent.LivingJumpEvent event) {
-        LivingEntity entity = event.getEntity();
-        if(entity == null || entity.level().isClientSide) return;
-
-        LazyOptional<IFinalStats> statsL = entity.getCapability(ModCapabilities.FINAL_STATS);
-
-        if (!statsL.isPresent()) return;
-
-        IFinalStats stats = statsL.orElseThrow(() -> new IllegalStateException("Failed an Impossible-to-Fail Capability Check"));
-
-        Vec3 mov = entity.getDeltaMovement();
-        Vec3 jump = new Vec3(mov.x,  Math.sqrt(stats.getFinalStat(StatType.JUMP_STRENGTH)* 2 * 0.08) + mov.y - 0.42, mov.z);
-        if (entity.isSprinting()) {
-            Vec3 jumpI = new Vec3(mov.x, 0, mov.z).scale(0.3);
-            jump = jump.add(jumpI);
-        }
-        entity.setDeltaMovement(jump);
-        entity.hurtMarked = true;
     }
 
     @SubscribeEvent
@@ -2522,87 +3461,287 @@ public class ModEvents {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.gameMode == null) return;
         Player player = mc.player;
-        if (mc.gameMode.getPlayerMode() == GameType.ADVENTURE || mc.gameMode.getPlayerMode() == GameType.SURVIVAL) {
             int width = mc.getWindow().getGuiScaledWidth();
             int height = mc.getWindow().getGuiScaledHeight();
-            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/health_bar_background.png"), width / 2 - 101, height - 42, 0, 0, 91, 11, 91, 11);
             player.getCapability(ModCapabilities.FINAL_STATS).ifPresent(statsF-> {
                 player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
-                    double maxHP = statsF.getFinalStat(StatType.MAX_HEALTH);
-                    double hp = statsI.getIndependentStat(IndependentStatType.HEALTH);
-                    double hpPerc = hp/maxHP;
-                    hp = (double) ((int) (hp * 100)) /100;
-                    maxHP = (double) ((int) (maxHP * 100)) /100;
-                    gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/health_bar.png"), width / 2 - 89, height - 40, 0, 0, (int) (77 * hpPerc), 7, 77, 7);
-                    gui.drawCenteredString(mc.font, hp + "/" + maxHP, width / 2 - 50, height - 40, 0xFFFFFF);
-                    double shield = statsI.getIndependentStat(IndependentStatType.SHIELD);
-                    if (shield > 0) {
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/shield_background.png"), width/2 - 101, height - 41, 0, 0, 9, 9, 9, 9);
-                        double shieldPerc = Math.min(maxHP, shield)/maxHP;
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/shield.png"), width/2 - 92, height - 43, 0, 0, (int) (83 * shieldPerc), 13, 83, 13);
-                    }
+                    player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                        System.out.print("");
+                        if (mc.gameMode.getPlayerMode() == GameType.ADVENTURE || mc.gameMode.getPlayerMode() == GameType.SURVIVAL) {
+                            double maxHP = statsF.getFinalStat(StatType.MAX_HEALTH);
+                            double hp = statsI.getIndependentStat(IndependentStatType.HEALTH);
+                            double hpPerc = hp / maxHP;
+                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/health_bar_background.png"), width / 2 - 101, height - 42, 0, 0, 91, 11, 91, 11);
+                            hp = (double) ((int) (hp * 100)) / 100;
+                            maxHP = (double) ((int) (maxHP * 100)) / 100;
+                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/health_bar.png"), width / 2 - 89, height - 40, 0, 0, (int) (77 * hpPerc), 7, 77, 7);
+                            gui.drawCenteredString(mc.font, hp + "/" + maxHP, width / 2 - 50, height - 40, 0xFFFFFF);
+                            double shield = statsI.getIndependentStat(IndependentStatType.SHIELD);
+                            if (shield > 0) {
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/shield_background.png"), width / 2 - 101, height - 41, 0, 0, 9, 9, 9, 9);
+                                double shieldPerc = Math.min(maxHP, shield) / maxHP;
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/shield.png"), width / 2 - 92, height - 43, 0, 0, (int) (83 * shieldPerc), 13, 83, 13);
+                            }
 
-                    double hunger = player.getFoodData().getFoodLevel();
-                    double sat = player.getFoodData().getSaturationLevel();
-                    double saturation = Math.min(sat, 20);
-                    double armor = (double) ((int) (statsF.getFinalStat(StatType.ARMOR) * 10)) /10;
+                            double hunger = player.getFoodData().getFoodLevel();
+                            double sat = player.getFoodData().getSaturationLevel();
+                            double saturation = Math.min(sat, 20);
+                            double armor = (double) ((int) (statsF.getFinalStat(StatType.ARMOR) * 10)) / 10;
 
 
-                    gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/hunger_bar_background.png"), width / 2 + 10, height - 42, 0, 0, 91, 11, 91, 11);
-                    if (armor != 0) {
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/armor.png"), width / 2 - 16, height - 58, 0, 0, 32, 18, 32, 18);
-                        if (armor >= 1000 || armor == (int) armor) {
-                            int armor1 = (int) armor;
-                            gui.drawCenteredString(mc.font, "" + armor1, width / 2, height - 54, 0xF9F9F9);
-                        } else {
-                            gui.drawCenteredString(mc.font, "" + armor, width / 2, height - 54, 0xF9F9F9);
+                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/hunger_bar_background.png"), width / 2 + 10, height - 42, 0, 0, 91, 11, 91, 11);
+                            if (armor != 0) {
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/armor.png"), width / 2 - 16, height - 58, 0, 0, 32, 18, 32, 18);
+                                if (armor >= 1000 || armor == (int) armor) {
+                                    int armor1 = (int) armor;
+                                    gui.drawCenteredString(mc.font, "" + armor1, width / 2, height - 54, 0xF9F9F9);
+                                } else {
+                                    gui.drawCenteredString(mc.font, "" + armor, width / 2, height - 54, 0xF9F9F9);
+                                }
+                            }
+                            if (hunger == 20) {
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/hunger_bar.png"), width / 2 + 12, height - 40, 0, 0, 77, 7, 77, 7);
+                            } else {
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/hunger_bar.png"), (int) ((double) width / 2 + 90 - (hunger / 20 * 77)), height - 40, 0, 0, (int) (77 * hunger / 20), 7, 77, 7);
+                            }
+                            gui.drawCenteredString(mc.font, (int) hunger + "/20", width / 2 + 50, height - 40, 0xFFFFFF);
+                            if (saturation > 0) {
+
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation_background.png"), width / 2 + 92, height - 41, 0, 0, 9, 9, 9, 9);
+                                if (saturation != 20) {
+                                    gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation.png"), (int) ((double) width / 2 + 90 - (saturation / 20 * 83)), height - 43, height - 42, 0, 0, (int) (83 * saturation / 20), 13, 83, 13);
+                                } else {
+                                    gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation.png"), (int) ((double) width / 2 + 9), height - 43, height - 43, 0, 0, 83, 13, 83, 13);
+                                }
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation_start.png"), width / 2 + 88, height - 43, 0, 0, 3, 13, 3, 13);
+                                if (saturation == 20) {
+                                    gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation_end.png"), width / 2 + 9, height - 43, 0, 0, 3, 13, 3, 13);
+                                }
+                            }
+
+
+                            int oxygen = max(0, player.getAirSupply());
+                            int maxO2 = player.getMaxAirSupply();
+                            if (oxygen < maxO2) {
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/air_bar_background.png"), width / 2 + 20, height - 55, 0, 0, 91, 11, 91, 11);
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/air_bar.png"), (int) ((double) width / 2 + 100 - ((double) oxygen / maxO2 * 77)), height - 53, 0, 0, (int) (77 * oxygen / maxO2), 7, 77, 7);
+                                gui.drawCenteredString(mc.font, oxygen / 20 + "/" + maxO2 / 20, width / 2 + 60, height - 53, 0xFFFFFF);
+                            }
+
+                            double bondOfLife = statsI.getIndependentStat(IndependentStatType.BOND_OF_LIFE);
+                            int bondOfLifePerc = (int) (bondOfLife / maxHP * 100);
+                            if (bondOfLifePerc > 0) {
+                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/bond_of_life_bar_background.png"), width / 2 - 110, height - 55, 0, 0, 91, 11, 91, 11);
+                                if (bondOfLifePerc <= 100) {
+                                    gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/bond_of_life_bar.png"), width / 2 - 98, height - 53, 0, 0, (int) (77 * bondOfLifePerc / 100), 7, 77, 7);
+                                } else if (bondOfLifePerc <= 200) {
+                                    gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/bond_of_life_bar.png"), width / 2 - 98, height - 53, 0, 0, 77, 7, 77, 7);
+                                    gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/bond_of_life_bar_2.png"), width / 2 - 98, height - 53, 0, 0, (int) (77 * (bondOfLifePerc / 100 - 1)), 7, 77, 7);
+                                }
+                                gui.drawCenteredString(mc.font, bondOfLifePerc + "%", width / 2 - 60, height - 53, 0xFFFFFF);
+                            }
                         }
-                    }
-                    if (hunger == 20) {
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/hunger_bar.png"), width / 2 + 12, height - 40, 0, 0, 77, 7, 77, 7);
+
+                    ItemStack weapon = statsI.getWeapon();
+                    ElementType element = statsI.getElementType();
+
+                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/dash_display.png"), width/2 + 94, height - 40, 0 ,0, 20, 20);
+
+                    gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/elemental_icons.png"), 0, height - 48, 0, 48 * element.ordinal(), 48, 48, 48, 720);
+                    gui.renderItem(weapon, 16, height - 32);
+
+                    double mountMaxHealth = statsP.getMountMaxHealth();
+                    if (mountMaxHealth > 0) {
+                            double mountHealth = statsP.getMountHealth();
+
+                            double mountHealthPerc = Math.min(1, mountHealth/mountMaxHealth);
+
+                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/mount_health_bar_background.png"), width/2 + 92, height - 12, 0, 0, 50, 11, 50, 11);
+                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/mount_health_bar.png"), width/2 + 94, height - 10, 0 , 0, (int) (36 * mountHealthPerc), 7);
+                            gui.drawCenteredString(mc.font,((int) (Math.min(mountHealth, mountMaxHealth) * 100)) / 100 + "/" + ((int) (mountMaxHealth * 100)) / 100, width/2 + 112, height - 10, 0xFFFFFF);
                     } else {
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/hunger_bar.png"), (int) ((double) width / 2 + 90 - (hunger / 20 * 77)), height - 40, 0, 0, (int) (77 * hunger / 20), 7, 77, 7);
-                    }
-                    gui.drawCenteredString(mc.font, (int) hunger + "/20", width / 2 + 50, height - 40, 0xFFFFFF);
-                    if (saturation > 0) {
 
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation_background.png"), width/2 + 92, height - 41, 0, 0, 9, 9, 9, 9);
-                        if (saturation != 20) {
-                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation.png"), (int) ((double) width / 2 + 90 - (saturation / 20 * 83)), height - 43, height - 42, 0, 0, (int) (83 * saturation / 20), 13, 83, 13);
-                        } else {
-                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation.png"), (int) ((double) width / 2 + 9), height - 43, height - 43, 0, 0, 83, 13, 83, 13);
+                        int dashes = (int) statsI.getIndependentStat(IndependentStatType.DASHES_AVAILABLE);
+                        int maxDashes = (int) statsF.getFinalStat(StatType.DASH_COUNT);
+                        double dashCooldownPerc = statsI.getIndependentStat(IndependentStatType.DASH_TIME) / statsF.getFinalStat(StatType.DASH_COOLDOWN);
+
+                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/dash_display.png"), width/2 + 94, height - 20, 0 ,0, 18, 18, 18, 18);
+
+                        if (dashCooldownPerc < 1) {
+                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/dash_bar.png"), width / 2 + 94, height - 20, 0, 0, 18, (int) (18 * dashCooldownPerc), 18, 18);
                         }
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation_start.png"), width/2 + 88, height - 43, 0, 0, 3, 13, 3, 13);
-                        if (saturation == 20) {
-                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/saturation_end.png"), width/2 + 9, height - 43, 0, 0, 3, 13, 3, 13);
+
+                        gui.drawCenteredString(mc.font, dashes + "/" + maxDashes, width/2 + 104, height - 17, 0xFFFFFF);
+
+                        int addJumps = (int) statsI.getIndependentStat(IndependentStatType.ADDITIONAL_JUMPS_AVAILABLE);
+                        int maxAddJumps = (int) statsF.getFinalStat(StatType.ADDITIONAL_JUMP);
+
+                        if (maxAddJumps > 0) {
+                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/additional_jump_display.png"), width/2 + 114, height - 20, 0 ,0, 20, 20, 20, 20);
+                            gui.drawCenteredString(mc.font, addJumps + "/" + maxAddJumps, width/2 + 124, height - 17, 0xFFFFFF);
+                        }}
+
+                    int deathDefianceChances = (int) statsI.getIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE);
+                    if (deathDefianceChances > 0) {
+                        gui.drawCenteredString(mc.font, deathDefianceChances + "", width / 2 - 106, height - 40, 0xe68600);
+                    }
+
+                    double maxMana = statsF.getFinalStat(StatType.MAX_MANA);
+                    if (maxMana > 0) {
+                        double mana = statsI.getIndependentStat(IndependentStatType.MANA);
+                        double manaPerc = mana / maxMana;
+                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/mana_icon_background.png"), width - 48, height - 48, 0, 0, 48, 48, 48, 48);
+                        RenderSystem.setShaderColor(0, 0.33F,1,1F);
+                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/circle.png"), (int) (width - 24 - 21 * manaPerc), (int) (height - 26 - 21 * manaPerc), (float) 0, (float) 0, (int) (42 * manaPerc), (int) (42*manaPerc), (int) (42*manaPerc), (int) (42*manaPerc));
+                        RenderSystem.setShaderColor(1,1,1,1);
+                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/mana_icon_mask.png"), width - 48, height - 48, 0, 0, 48, 48, 48, 48);
+                        gui.drawCenteredString(mc.font, "" + (int) mana, width -24, height-30, 0xFFFFFF);
+                        gui. drawCenteredString(mc.font, "" + (int) maxMana, width - 24, height - 8, 0xFFFFFF);
+                    }
+
+                    int effectAmount = statsI.getActiveEffectList().size();
+                    int i = 0;
+
+                        System.out.print("");
+
+                        if (effectAmount <= 24) {
+                            for (Map.Entry<MobEffect, StatusEffectInstanceEntry> entry : statsI.getActiveEffectList().entrySet()) {
+                                if (i < effectAmount) {
+                                    Optional<ResourceKey<MobEffect>> optional = BuiltInRegistries.MOB_EFFECT.getResourceKey(entry.getKey());
+                                    if (optional.isPresent()) {
+                                        ResourceKey<MobEffect> resourceKey = optional.get();
+                                        Holder<MobEffect> holder = optional.get().getOrThrow(player);
+                                        if (!holder.is(ModTags.EFFECTS_NOT_SHOWN_IN_GUI)) {
+                                            int ix = (int) ((i/6) + 1);
+                                            int iy = i - ((ix - 1) * 6) + 1;
+
+                                            System.out.print("");
+
+
+                                            if (holder.is(ModTags.SPECIAL_NEUTRAL_EFFECT)) {
+                                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_neutral_effect_icon_background.png"), width - 23 * ix, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            } else if (holder.is(ModTags.SPECIAL_BUFFS)) {
+                                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_buff_icon_background.png"), width - 23 * ix, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            } else if (holder.is(ModTags.SPECIAL_DEBUFFS)) {
+                                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_debuff_icon_background.png"), width - 23 * ix,  23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            } else {
+                                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/effect_icon_background.png"), width - 23 * ix, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            }
+
+                                            ResourceLocation effectImage = ModGeneralUtils.getEffectIcon(entry.getKey());
+
+                                            if (resourceKey.location().getNamespace().equals("minecraft")) {
+                                                gui.blit(effectImage, width - 23 * ix + 2, 23 * (iy - 1) + 1 + 2, 0, 0, 18, 18, 18, 18);
+                                            } else {
+                                                gui.blit(effectImage, width - 23 * ix + 3, 23 * (iy - 1) + 1 + 3, 0, 0, 16, 16, 16, 16);
+                                            }
+
+                                            if (holder.is(ModTags.DEBUFFS) || holder.is(ModTags.SPECIAL_DEBUFFS) || holder.is(ModTags.CC_DEBUFFS)) {
+                                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/debuff_icon_background.png"), width - 23 * ix, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            } else if (holder.is(ModTags.BUFFS) || holder.is(ModTags.SPECIAL_BUFFS)) {
+                                                gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/buff_icon_background.png"), width - 23 * ix, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            }
+
+                                            i = 1 + i;
+                                        }
+                                    }
+                                }
                         }
-                    }
+                    } else if (effectAmount <= 42) {
+                        for (Map.Entry<MobEffect, StatusEffectInstanceEntry> entry : statsI.getActiveEffectList().entrySet()) {
+                            if (i < effectAmount) {
+                                Optional<ResourceKey<MobEffect>> optional = BuiltInRegistries.MOB_EFFECT.getResourceKey(entry.getKey());
+                                if (optional.isPresent()) {
+                                    ResourceKey<MobEffect> resourceKey = optional.get();
+                                    Holder<MobEffect> holder = optional.get().getOrThrow(player);
+                                    if (!holder.is(ModTags.EFFECTS_NOT_SHOWN_IN_GUI)) {
+                                        int ix = (int) ((i/6) + 1);
+                                        int iy = i - ((ix - 1) * 6) + 1;
 
+                                        System.out.print("");
 
-                    int oxygen = Math.max(0, player.getAirSupply());
-                    int maxO2 = player.getMaxAirSupply();
-                    if (oxygen < maxO2) {
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/air_bar_background.png"), width / 2 + 20, height - 55, 0, 0, 91, 11, 91, 11);
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/air_bar.png"), (int) ((double) width / 2 + 100 - ((double) oxygen / maxO2 * 77)), height - 53, 0, 0, (int) (77 * oxygen / maxO2), 7, 77, 7);
-                        gui.drawCenteredString(mc.font,  oxygen/20 + "/" + maxO2/20, width / 2 + 60, height - 53, 0xFFFFFF);
-                    }
+                                        if (holder.is(ModTags.SPECIAL_NEUTRAL_EFFECT)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_neutral_effect_icon_background.png"), width - 12 * ix - 11, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        } else if (holder.is(ModTags.SPECIAL_BUFFS)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_buff_icon_background.png"), width - 12 * ix - 11, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        } else if (holder.is(ModTags.SPECIAL_DEBUFFS)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_debuff_icon_background.png"), width - 12 * ix - 11, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        } else {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/effect_icon_background.png"), width - 12 * ix - 11, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        }
 
-                    double bondOfLife = statsI.getIndependentStat(IndependentStatType.BOND_OF_LIFE);
-                    int bondOfLifePerc = ((int) (bondOfLife / maxHP * 100))/100;
-                    if (bondOfLifePerc > 0) {
-                        gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/bond_of_life_bar_background.png"), width / 2 - 110, height - 55, 0, 0, 91, 11, 91, 11);
-                        if (bondOfLifePerc <= 1) {
-                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/bond_of_life_bar.png"), width / 2 - 98, height - 53, 0, 0, (int) (77 * bondOfLifePerc), 7, 77, 7);
-                        } else if (bondOfLifePerc <= 2) {
-                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/bond_of_life_bar.png"), width / 2 - 98, height - 53, 0, 0, 77, 7, 77, 7);
-                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/bond_of_life_bar_2.png"), width / 2 - 98, height - 53, 0, 0, (int) (77 * (bondOfLifePerc - 1)), 7, 77, 7);
+                                        ResourceLocation effectImage = ModGeneralUtils.getEffectIcon(entry.getKey());
+
+                                        if (resourceKey.location().getNamespace().equals("minecraft")) {
+                                            gui.blit(effectImage, width - 12 * ix + 2 - 11, 23 * (iy - 1) + 1 + 2, 0, 0, 18, 18, 18, 18);
+                                        } else {
+                                            gui.blit(effectImage, width - 12 * ix + 3 - 11, 23 * (iy - 1) + 1 + 3, 0, 0, 16, 16, 16, 16);
+                                        }
+
+                                        if (holder.is(ModTags.DEBUFFS) || holder.is(ModTags.SPECIAL_DEBUFFS)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/debuff_icon_background.png"), width - 12 * ix - 11, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        } else if (holder.is(ModTags.BUFFS) || holder.is(ModTags.SPECIAL_BUFFS)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/buff_icon_background.png"), width - 12 * ix - 11, 23 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        }
+
+                                        i = 1 + i;
+                                    }
+                                }
+                            }
                         }
-                        gui.drawCenteredString(mc.font,   bondOfLifePerc*100 + "%", width / 2 - 60, height - 53, 0xFFFFFF);
+                    } else {
+                        effectAmount = Math.min(77, effectAmount);
+                        for (Map.Entry<MobEffect, StatusEffectInstanceEntry> entry : statsI.getActiveEffectList().entrySet()) {
+                            if (i < effectAmount) {
+                                Optional<ResourceKey<MobEffect>> optional = BuiltInRegistries.MOB_EFFECT.getResourceKey(entry.getKey());
+                                if (optional.isPresent()) {
+                                    ResourceKey<MobEffect> resourceKey = optional.get();
+                                    Holder<MobEffect> holder = optional.get().getOrThrow(player);
+                                    if (!holder.is(ModTags.EFFECTS_NOT_SHOWN_IN_GUI)) {
+                                        int ix = (int) ((i/6) + 1);
+                                        int iy = i - ((ix - 1) * 6) + 1;
+
+                                        System.out.print("");
+
+                                        if (holder.is(ModTags.SPECIAL_NEUTRAL_EFFECT)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_neutral_effect_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        } else if (holder.is(ModTags.SPECIAL_BUFFS)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_buff_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        } else if (holder.is(ModTags.SPECIAL_DEBUFFS)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_debuff_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        } else {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/effect_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        }
+
+                                        ResourceLocation effectImage = ModGeneralUtils.getEffectIcon(entry.getKey());
+
+                                        if (resourceKey.location().getNamespace().equals("minecraft")) {
+                                            gui.blit(effectImage, width - 12 * ix + 2, 12 * (iy - 1) + 1 + 2, 0, 0, 18, 18, 18, 18);
+                                        } else {
+                                            gui.blit(effectImage, width - 12 * ix + 3, 12 * (iy - 1) + 1 + 3, 0, 0, 16, 16, 16, 16);
+                                        }
+
+                                        if (holder.is(ModTags.DEBUFFS) || holder.is(ModTags.SPECIAL_DEBUFFS)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/debuff_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        } else if (holder.is(ModTags.BUFFS) || holder.is(ModTags.SPECIAL_BUFFS)) {
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/buff_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                        }
+
+                                        i = 1 + i;
+                                    }
+                                }
+                            }
+                        }
+
                     }
+
+
+
+
+
+                    });
                 });
-                    }
-            );
-        }
+            });
     }
 
     @SubscribeEvent
@@ -2617,32 +3756,25 @@ public class ModEvents {
             living.addTag("capsToDeserialize");
             living.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(cap -> {
                 living.getPersistentData().put("IIndependentStats", cap.serializeNBT());
-                System.out.println("Saved Independent Stats' data for " + entity.getName());
             });
             living.getCapability(ModCapabilities.BASE_STATS).ifPresent(cap -> {
                 living.getPersistentData().put("IBaseStats", cap.serializeNBT());
-                System.out.println("Saved Base Stats' data for " + entity.getName());
             });
             living.getCapability(ModCapabilities.ADD_STATS).ifPresent(cap -> {
                 living.getPersistentData().put("IAddStats", cap.serializeNBT());
-                System.out.println("Saved Add Stats' data for " + entity.getName());
             });
             living.getCapability(ModCapabilities.MULT_STATS).ifPresent(cap -> {
                 living.getPersistentData().put("IMultStats", cap.serializeNBT());
-                System.out.println("Saved Mult Stats' data for " + entity.getName());
             });
             living.getCapability(ModCapabilities.FINAL_STATS).ifPresent(cap -> {
                 living.getPersistentData().put("IFinalStats", cap.serializeNBT());
-                System.out.println("Saved Final Stats' data for " + entity.getName());
             });
             living.getCapability(ModCapabilities.DIRTY_STATS).ifPresent(cap -> {
                 living.getPersistentData().put("IDirtyStats", cap.serializeNBT());
-                System.out.println("Saved Dirty Stats' data for " + entity.getName());
             });
             if (entity.getTags().contains("indicator")) {
                 living.getCapability(ModCapabilities.INDICATOR_STATS).ifPresent(cap -> {
                     living.getPersistentData().put("IIndicatorStats", cap.serializeNBT());
-                    System.out.println("Saved Indicator Stats' data for " + entity.getName());
                 });
             }
         }
@@ -2657,44 +3789,37 @@ public class ModEvents {
 
             if (living.getPersistentData().contains("IIndependentStats")) {
                 living.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(cap -> {
-                    cap.deserializeNBT(living.getPersistentData().getCompound("IIndependentStats"));
-                    System.out.println("Loaded Independent Stats' data for " + entity.getName());
+                    cap.deserializeNBT(living.getPersistentData().getCompound("IIndependentStats"), living);
                 });
             }
             if (living.getPersistentData().contains("IBaseStats") && living.getPersistentData().getCompound("IBaseStats").contains("BaseStats")) {
                 living.getCapability(ModCapabilities.BASE_STATS).ifPresent(cap -> {
                     cap.deserializeNBT(living.getPersistentData().getCompound("IBaseStats"));
-                    System.out.println("Loaded Base Stats' data for " + entity.getName());
                 });
             }
             if (living.getPersistentData().contains("IAddStats") && living.getPersistentData().getCompound("IAddStats").contains("AddeStats")) {
                 living.getCapability(ModCapabilities.ADD_STATS).ifPresent(cap -> {
                     cap.deserializeNBT(living.getPersistentData().getCompound("IAddStats"));
-                    System.out.println("Loaded Add Stats' data for " + entity.getName());
                 });
             }
             if (living.getPersistentData().contains("IMultStats") && living.getPersistentData().getCompound("IMultStats").contains("MultStats")) {
                 living.getCapability(ModCapabilities.MULT_STATS).ifPresent(cap -> {
                     cap.deserializeNBT(living.getPersistentData().getCompound("IMultStats"));
-                    System.out.println("Loaded Mult Stats' data for " + entity.getName());
                 });
             }
             if (living.getPersistentData().contains("IFinalStats") && living.getPersistentData().getCompound("IFinalStats").contains("FinalStats")) {
                 living.getCapability(ModCapabilities.FINAL_STATS).ifPresent(cap -> {
                     cap.deserializeNBT(living.getPersistentData().getCompound("IFinalStats"));
-                    System.out.println("Loaded Final Stats' data for " + entity.getName());
                 });
             }
             if (living.getPersistentData().contains("IDirtyStats") && living.getPersistentData().getCompound("IDirtyStats").contains("DirtyStats")) {
                 living.getCapability(ModCapabilities.DIRTY_STATS).ifPresent(cap -> {
                     cap.deserializeNBT(living.getPersistentData().getCompound("IDirtyStats"));
-                    System.out.println("Loaded Dirty Stats' data for " + entity.getName());
                 });
             }
             if (living.getTags().contains("indicator") && living.getPersistentData().contains("IIndicatorStats")) {
                 living.getCapability(ModCapabilities.INDICATOR_STATS).ifPresent(cap -> {
                     cap.deserializeNBT(living.getPersistentData().getCompound("IIndicatorStats"));
-                    System.out.println("Loaded Indicator Stats' data for " + entity.getName());
                 });
             }
         }
@@ -2726,6 +3851,9 @@ public class ModEvents {
             living.getCapability(ModCapabilities.DIRTY_STATS).ifPresent(cap -> {
                 rootTag.put("IDirtyStats", cap.serializeNBT());
             });
+            living.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(cap -> {
+                rootTag.put("IPlayerStats", cap.serializeNBT());
+            });
 
             NbtIo.writeCompressed(rootTag, pPath);
 
@@ -2749,7 +3877,7 @@ public class ModEvents {
 
             if (rootTag.contains("IIndependentStats")) {
                 living.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(cap -> {
-                    cap.deserializeNBT(rootTag.getCompound("IIndependentStats"));
+                    cap.deserializeNBT(rootTag.getCompound("IIndependentStats"), living);
                 });
             }
             if (rootTag.contains("IBaseStats") && rootTag.getCompound("IBaseStats").contains("BaseStats")) {
@@ -2777,6 +3905,11 @@ public class ModEvents {
                     cap.deserializeNBT(rootTag.getCompound("IDirtyStats"));
                 });
             }
+            if (rootTag.contains("IPlayerStats")) {
+                living.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(cap -> {
+                    cap.deserializeNBT(rootTag.getCompound("IPlayerStats"), living);
+                });
+            }
 
         } catch (IOException e) {
             System.out.println("Failed to read player stats");
@@ -2786,7 +3919,7 @@ public class ModEvents {
     @SubscribeEvent
     public static void registerCustomCommands (RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
-        CustomCommands.register(dispatcher);
+        ModCommands.register(dispatcher);
     }
 
     @SubscribeEvent
@@ -2834,6 +3967,19 @@ public class ModEvents {
             double newMana = Math.min (maxMana, amountRestored + mana);
             double showMana = newMana - mana;
             statsI.setIndependentStat(IndependentStatType.MANA, newMana);
+
+            entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+                Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                if (!stats.getActiveEffectList().isEmpty()) {
+                    for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                        if (effectMap.containsKey(copiedEffect)) {
+                            StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                            if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                                ((ICustomStatusEffect) copiedEffect).onManaRestore(entity, amountRestored);
+                            }
+                        }
+                    }}
+            });
 
             double x = player.getX();
             double y = player.getY();
@@ -2884,7 +4030,281 @@ public class ModEvents {
 
         double mana = statsI.getIndependentStat(IndependentStatType.MANA);
         double amount = event.getAmount();
-        double newMana = Math.max(0, mana - amount);
+        double newMana = max(0, mana - amount);
+
+        entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+            if (!stats.getActiveEffectList().isEmpty()) {
+                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                    if (effectMap.containsKey(copiedEffect)) {
+                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                            ((ICustomStatusEffect) copiedEffect).onManaConsume(entity, mana - newMana);
+                        }
+                    }
+                }}
+        });
+
         statsI.setIndependentStat(IndependentStatType.MANA, newMana);
+    }
+
+    @SubscribeEvent
+    public static void onXPGain(LivingExperienceDropEvent event) {
+        Player player = event.getAttackingPlayer();
+        if (player == null || player.level().isClientSide) return;
+        player.getCapability(ModCapabilities.FINAL_STATS).ifPresent(stats -> {
+            double xpMult = stats.getFinalStat(StatType.XP_GAIN);
+            int xp = event.getDroppedExperience();
+            event.setDroppedExperience((int) (xpMult * xp));
+        });
+    }
+
+    @SubscribeEvent
+    public static void onEffectTick(LivingEvent.LivingTickEvent event) {
+        LivingEntity entity = event.getEntity();
+        if (entity == null || entity.level().isClientSide) return;
+
+        entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+
+            if (!stats.getActiveEffectList().isEmpty()) {
+                Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                    if (effectMap.containsKey(copiedEffect) && copiedEffect != null) {
+                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                        StatusEffectInstanceEntry value = new StatusEffectInstanceEntry(effectInstance.duration(), effectInstance.amplifier(), effectInstance.stacks(), effectInstance.maxStacks(), effectInstance.applier(), effectInstance.data(), true);
+                        if (effectInstance.duration() != Integer.MAX_VALUE) {
+                            value = new StatusEffectInstanceEntry(effectInstance.duration() - 1, effectInstance.amplifier(), effectInstance.stacks(), effectInstance.maxStacks(), effectInstance.applier(), effectInstance.data(), true);
+                        }
+                        if (effectInstance.isInitialised()) {
+                            effectMap.replace(copiedEffect, value);
+                            if (copiedEffect instanceof ICustomStatusEffect) {
+                                ((ICustomStatusEffect) copiedEffect).onTick(entity);
+                            }
+                        } else {
+                            effectMap.replace(copiedEffect, value);
+                            if (copiedEffect instanceof ICustomStatusEffect) {
+                                ((ICustomStatusEffect) copiedEffect).onInitialisation(entity);
+                                ((ICustomStatusEffect) copiedEffect).onTick(entity);
+                            }
+
+                            if (!(copiedEffect instanceof ICustomStatusEffect)) {
+                                BuiltInRegistries.MOB_EFFECT.getHolder(BuiltInRegistries.MOB_EFFECT.getId(copiedEffect)).ifPresent(effectHolder -> entity.addEffect(new MobEffectInstance(effectHolder, Integer.MAX_VALUE, (int) (effectInstance.amplifier()))));
+                            }                        }
+                        if (effectInstance.duration() <= 0) {
+                            stats.removeActiveEffect(copiedEffect, entity);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    @SubscribeEvent
+    public static void onEffectAttack (AttackCustomEvent event) {
+        LivingEntity entity = event.getAttacker();
+        if (entity == null || entity.level().isClientSide) return;
+
+        entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+            if (!stats.getActiveEffectList().isEmpty()) {
+            for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                if (effectMap.containsKey(copiedEffect)) {
+                    StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                    if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                        ((ICustomStatusEffect) copiedEffect).onAttack(entity);
+                    }
+                }
+            }}
+        });
+    }
+
+    @SubscribeEvent
+    public static void modifyBreakSpeed(PlayerEvent.BreakSpeed event) {
+        Player player = event.getEntity();
+        if (!player.level().isClientSide) {
+            player.getCapability(ModCapabilities.FINAL_STATS).ifPresent(stats -> {
+                event.setNewSpeed((float) (event.getOriginalSpeed() * stats.getFinalStat(StatType.MINING_SPEED)));
+            });
+        }
+    }
+
+    @SubscribeEvent
+    public static void onJump(LivingEvent.LivingJumpEvent event) {
+        LivingEntity entity = event.getEntity();
+
+        if (entity == null || entity.level().isClientSide) return;
+
+        entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+            if (!stats.getActiveEffectList().isEmpty()) {
+                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                    if (effectMap.containsKey(copiedEffect)) {
+                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                            ((ICustomStatusEffect) copiedEffect).onJump(entity);
+                        }
+                    }
+                }}
+        });
+    }
+
+    @SubscribeEvent
+    public static void onFall(LivingFallEvent event) {
+        LivingEntity entity = event.getEntity();
+        if(entity == null || entity.level().isClientSide) return;
+
+        entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(stats -> {
+            Map<MobEffect, StatusEffectInstanceEntry> effectMap = stats.getActiveEffectList();
+            if (!stats.getActiveEffectList().isEmpty()) {
+                for (MobEffect copiedEffect : (new HashMap<>(stats.getActiveEffectList())).keySet()) {
+                    if (effectMap.containsKey(copiedEffect)) {
+                        StatusEffectInstanceEntry effectInstance = effectMap.get(copiedEffect);
+                        if (copiedEffect instanceof ICustomStatusEffect && effectInstance.isInitialised()) {
+                            ((ICustomStatusEffect) copiedEffect).onFall(entity, event.getDistance());
+                        }
+                    }
+                }}
+        });
+    }
+
+    @SubscribeEvent
+    public static void onTotemWielding(LivingEvent.LivingTickEvent event) {
+        LivingEntity entity = event.getEntity();
+        if (entity == null || entity.level().isClientSide) return;
+
+        entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
+            if (statsI.getIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE) < 0) {
+                statsI.setIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE, 0);
+            }
+            if (entity.getItemBySlot(EquipmentSlot.OFFHAND).getItem() == Items.TOTEM_OF_UNDYING || entity.getItemBySlot(EquipmentSlot.MAINHAND).getItem() == Items.TOTEM_OF_UNDYING) {
+                if (!statsI.getActiveEffectList().containsKey(ModEffects.TOTEM_WARD_EFFECT.get())) {
+                    statsI.addActiveEffectEntry(ModEffects.TOTEM_WARD_EFFECT.get(), new StatusEffectInstanceEntry(Integer.MAX_VALUE, 1, 0, 0, entity.getUUID(), new CompoundTag(), false), entity);
+                    statsI.setIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE, statsI.getIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE) + 1);
+                    entity.getCapability(ModCapabilities.ADD_STATS).ifPresent(statsA -> {
+                        entity.getCapability(ModCapabilities.DIRTY_STATS).ifPresent(statsD -> {
+                            statsA.setAddStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE, statsA.getAddStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE) + 0.4);
+                            statsD.setDirtyStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE, true);
+                        });
+                    });
+                }
+
+            } else if (statsI.getActiveEffectList().containsKey(ModEffects.TOTEM_WARD_EFFECT.get()) && !statsI.getActiveEffectList().containsKey(ModEffects.BLESSING_OF_UNDYING_EFFECT.get())) {
+                statsI.removeActiveEffect(ModEffects.TOTEM_WARD_EFFECT.get(), entity);
+                statsI.setIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE, statsI.getIndependentStat(IndependentStatType.DEATH_DEFIANCE_CHANCES_AVAILABLE) - 1);
+                entity.getCapability(ModCapabilities.ADD_STATS).ifPresent(statsA -> {
+                    entity.getCapability(ModCapabilities.DIRTY_STATS).ifPresent(statsD -> {
+                        statsA.setAddStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE, statsA.getAddStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE) - 0.4);
+                        statsD.setDirtyStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE, true);
+                    });
+                });
+            } else if (statsI.getActiveEffectList().containsKey(ModEffects.TOTEM_WARD_EFFECT.get()) && statsI.getActiveEffectList().containsKey(ModEffects.BLESSING_OF_UNDYING_EFFECT.get())) {
+                statsI.removeActiveEffect(ModEffects.TOTEM_WARD_EFFECT.get(), entity);
+                entity.getCapability(ModCapabilities.ADD_STATS).ifPresent(statsA -> {
+                    entity.getCapability(ModCapabilities.DIRTY_STATS).ifPresent(statsD -> {
+                        statsA.setAddStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE, statsA.getAddStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE) - 0.4);
+                        statsD.setDirtyStat(StatType.HEALTH_RESTORATION_ON_DEATH_DEFIANCE, true);
+                    });
+                });
+            }
+        });
+    }
+
+    @SubscribeEvent
+    public static void onSleep(SleepFinishedTimeEvent event) {
+        if (event.getLevel().isClientSide()) return;
+        for (Player player : event.getLevel().players().stream().toList()) {
+            if (player.isSleepingLongEnough()) {
+                player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
+                    statsI.setIndependentStat(IndependentStatType.BOND_OF_LIFE, 0);
+                });
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void onMilkDrinking(LivingEntityUseItemEvent event) {
+        if (event.getEntity().level().isClientSide) return;
+        if (event.getEntity() instanceof Player player && event.getItem().getItem() == Items.MILK_BUCKET) {
+
+            player.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
+                        player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                            int time = statsP.getMilkDrinkingTime();
+                            if (time == 0) {
+                                Map<MobEffect, StatusEffectInstanceEntry> effectMap = statsI.getActiveEffectList();
+                                if (!statsI.getActiveEffectList().isEmpty()) {
+                                    for (MobEffect copiedEffect : (new HashMap<>(statsI.getActiveEffectList())).keySet()) {
+                                        if (effectMap.containsKey(copiedEffect)) {
+                                            ResourceKey<MobEffect> key = BuiltInRegistries.MOB_EFFECT.getResourceKey(copiedEffect).orElseThrow();
+                                            if (key.getOrThrow(player).is(ModTags.DEBUFFS) && !(key.getOrThrow(player).is(ModTags.UNDISPELLABLE_EFFECTS))) {
+                                                statsI.removeActiveEffectWithoutConsequences(copiedEffect, player);
+                                                if (!player.isCreative()) {
+                                                    player.getInventory().removeItem(event.getItem());
+                                                    player.addItem(new ItemStack(Items.BUCKET));
+                                                }
+
+                                                statsP.setMilkDrinkingTime(-1);
+                                                event.setCanceled(true);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if (time < 0) {
+                                statsP.setMilkDrinkingTime(30);
+                            }
+                        });
+                    }
+                );
+        }
+    }
+
+    @SubscribeEvent
+    public static void onInterruptItemUsage (LivingEntityUseItemEvent.Stop event) {
+        if (event.getEntity().level().isClientSide) return;
+        if (event.getEntity() instanceof Player player && event.getItem().getItem() == Items.MILK_BUCKET) {
+
+            player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                statsP.setMilkDrinkingTime(-1);
+            });
+        }
+    }
+
+    @SubscribeEvent
+    public static void onMount(EntityMountEvent event) {
+        if (event.getEntityMounting() instanceof Player player && event.getEntityBeingMounted() instanceof LivingEntity living && !player.level().isClientSide) {
+            player.getCapability(ModCapabilities.PLAYER_STATS).ifPresent(statsP -> {
+                living.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
+                    living.getCapability(ModCapabilities.FINAL_STATS).ifPresent(statsF -> {
+                        if (event.isMounting()) {
+                            statsP.setMount(living);
+                            statsP.setMountHealth(statsI.getIndependentStat(IndependentStatType.HEALTH));
+                            statsP.setMountMaxHealth(statsF.getFinalStat(StatType.MAX_HEALTH));
+                        }
+                        if (event.isDismounting()) {
+                            statsP.setMount(null);
+                            statsP.setMountHealth(0);
+                            statsP.setMountMaxHealth(0);
+                        }
+                    });
+                });
+            });
+        }
+    }
+
+    @SubscribeEvent
+    public static void onEffectReception (MobEffectEvent.Added event) {
+        LivingEntity entity = event.getEntity();
+        MobEffectInstance effectInstance = event.getEffectInstance();
+        if (entity.level().isClientSide) return;
+
+        if (effectInstance.getEffect().is(ModTags.STACKABLE_EFFECT) || effectInstance.getEffect().is(ModTags.UNDISPELLABLE_EFFECTS) || effectInstance.getEffect().is(ModTags.NEUTRAL_EFFECTS) || effectInstance.getEffect().is(ModTags.DEBUFFS) || effectInstance.getEffect().is(ModTags.CC_DEBUFFS) || effectInstance.getEffect().is(ModTags.EFFECTS_NOT_SHOWN_IN_GUI) || effectInstance.getEffect().is(ModTags.BUFFS) || effectInstance.getEffect().is(ModTags.DOT_EFFECTS) || effectInstance.getEffect().is(ModTags.SPECIAL_BUFFS) || effectInstance.getEffect().is(ModTags.SPECIAL_DEBUFFS) || effectInstance.getEffect().is(ModTags.SPECIAL_NEUTRAL_EFFECT)) {
+            entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
+                if (!statsI.getActiveEffectList().containsKey(effectInstance.getEffect().get())) {
+                    entity.removeEffect(effectInstance.getEffect());
+                }
+            });
+        } else {
+            entity.removeEffect(effectInstance.getEffect());
+        }
     }
 }

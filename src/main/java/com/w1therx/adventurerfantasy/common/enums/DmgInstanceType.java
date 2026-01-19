@@ -7,5 +7,6 @@ public enum DmgInstanceType {
     FOLLOW_UP,
     REACTION,
     RETALIATION,
-    SUMMON
+    SUMMON,
+    ULTIMATE
 }

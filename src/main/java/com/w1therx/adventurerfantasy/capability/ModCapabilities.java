@@ -13,6 +13,7 @@ public final class ModCapabilities {
     public static Capability<IDirtyStats> DIRTY_STATS = null;
     public static Capability<IIndicatorStats> INDICATOR_STATS = null;
     public static Capability<IIndependentStats> INDEPENDENT_STATS = null;
+    public static Capability<IPlayerStats> PLAYER_STATS = null;
 
     public static void register() {
         BASE_STATS = CapabilityManager.get(new CapabilityToken<>(){});
@@ -22,6 +23,6 @@ public final class ModCapabilities {
         DIRTY_STATS = CapabilityManager.get(new CapabilityToken<>() {});
         INDICATOR_STATS = CapabilityManager.get(new CapabilityToken<>(){});
         INDEPENDENT_STATS = CapabilityManager.get(new CapabilityToken<>(){});
-        System.out.print("[DEBUG] Capabilities Initialised");
+        PLAYER_STATS = CapabilityManager.get(new CapabilityToken<>() {});
     }
 }
