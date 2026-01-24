@@ -28,6 +28,11 @@ public class IceInfusionEffect extends MobEffect implements ICustomStatusEffect 
     }
 
     @Override
+    public String effectDescription(LivingEntity entity) {
+        return "Converts damage dealt into Ice damage.";
+    }
+
+    @Override
     public void onInitialisation(LivingEntity entity){
         entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
             statsI.setElementType(ElementType.ICE);

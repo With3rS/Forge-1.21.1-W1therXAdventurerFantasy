@@ -24,6 +24,11 @@ public class CreativeShockEffect extends MobEffect implements ICustomStatusEffec
     }
 
     @Override
+    public String effectDescription(LivingEntity entity) {
+        return "Prevents block placement and destruction.";
+    }
+
+    @Override
     public void onInitialisation(LivingEntity entity) {
 
     }

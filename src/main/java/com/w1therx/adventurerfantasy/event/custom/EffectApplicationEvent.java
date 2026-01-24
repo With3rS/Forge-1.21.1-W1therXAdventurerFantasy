@@ -1,5 +1,6 @@
 package com.w1therx.adventurerfantasy.event.custom;
 
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraftforge.eventbus.api.Event;
@@ -17,8 +18,9 @@ public class EffectApplicationEvent extends Event {
     private final int stacks;
     private final int maxStacks;
     private final boolean isCertain;
+    private final CompoundTag data;
 
-    public EffectApplicationEvent(@Nullable LivingEntity caster, LivingEntity target, MobEffect effect, int effectDuration, double effectChance, double effectAmp, int stacks, int maxStacks, boolean isCertain) {
+    public EffectApplicationEvent(@Nullable LivingEntity caster, LivingEntity target, MobEffect effect, int effectDuration, double effectChance, double effectAmp, int stacks, int maxStacks, boolean isCertain, CompoundTag data) {
         this.caster = caster;
         this.target = target;
         this.effect = effect;
@@ -28,6 +30,7 @@ public class EffectApplicationEvent extends Event {
         this.stacks = stacks;
         this.maxStacks = maxStacks;
         this.isCertain = isCertain;
+        this.data = data;
     }
     public LivingEntity getCaster()
     {
@@ -62,4 +65,5 @@ public class EffectApplicationEvent extends Event {
     public boolean getIsCertain() {
         return isCertain;
     }
+    public CompoundTag getData() { return data ;}
 }

@@ -4,6 +4,7 @@ import com.w1therx.adventurerfantasy.capability.*;
 import com.w1therx.adventurerfantasy.effect.general.ModEffects;
 import com.w1therx.adventurerfantasy.event.custom.EffectApplicationEvent;
 import com.w1therx.adventurerfantasy.event.custom.ShieldingEvent;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
@@ -57,7 +58,9 @@ public class InteractInputReceiver {
             if (player.getItemInHand(InteractionHand.MAIN_HAND).getItem() == Items.SHIELD || player.getItemInHand(InteractionHand.OFF_HAND).getItem() == Items.SHIELD) {
                      if (!independentStats.getActiveEffectList().containsKey(ModEffects.CAUTION_EFFECT.get()) || independentStats.getActiveEffectList().get(ModEffects.CAUTION_EFFECT.get()).duration() < 2) {
                          MinecraftForge.EVENT_BUS.post(new ShieldingEvent(player, player, 5, 8));
-                         MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent(player, player, ModEffects.CAUTION_EFFECT.get(), 8, 1, 5, 5, 5, true));
+                         CompoundTag data = new CompoundTag();
+                         data.putDouble("knockback_res", 0.5);
+                         MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent(player, player, ModEffects.CAUTION_EFFECT.get(), 8, 1, 5, 5, 5, true, data));
                      }
                  }
 

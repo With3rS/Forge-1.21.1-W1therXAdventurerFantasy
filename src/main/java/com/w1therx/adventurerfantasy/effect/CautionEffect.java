@@ -1,14 +1,12 @@
 package com.w1therx.adventurerfantasy.effect;
 
-import com.w1therx.adventurerfantasy.capability.IAddStats;
-import com.w1therx.adventurerfantasy.capability.IDirtyStats;
-import com.w1therx.adventurerfantasy.capability.IIndependentStats;
-import com.w1therx.adventurerfantasy.capability.ModCapabilities;
+import com.w1therx.adventurerfantasy.capability.*;
 import com.w1therx.adventurerfantasy.common.enums.ElementalReaction;
 import com.w1therx.adventurerfantasy.common.enums.StatType;
 import com.w1therx.adventurerfantasy.effect.general.ICustomStatusEffect;
 import com.w1therx.adventurerfantasy.effect.general.ModEffects;
 import com.w1therx.adventurerfantasy.effect.general.StatusEffectInstanceEntry;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectCategory;
 import net.minecraft.world.entity.LivingEntity;
@@ -36,6 +34,21 @@ public class CautionEffect extends MobEffect implements ICustomStatusEffect {
         return true;
     }
 
+    @Override
+    public String effectDescription(LivingEntity entity) {
+        LazyOptional<IIndependentStats> optional = entity.getCapability(ModCapabilities.INDEPENDENT_STATS);
+        if (optional.isPresent()) {
+            IIndependentStats stats = optional.orElseThrow(() -> new IllegalStateException("Failed an impossible-to-fail capability check"));
+            StatusEffectInstanceEntry entry = stats.getActiveEffectData(ModEffects.CAUTION_EFFECT.get());
+            CompoundTag data = entry.data();
+            double knockbackRes = 0;
+            if (data.contains("knockback_res"))  {
+                knockbackRes = data.getDouble("knockback_res") * 100;
+            }
+            return "Increases defense by " + entry.amplifier() + " points and knockback resistance by " + knockbackRes + "%.";
+        } else return "";
+    }
+
 
     @Override
     public void onInitialisation(LivingEntity entity){
@@ -53,9 +66,14 @@ public class CautionEffect extends MobEffect implements ICustomStatusEffect {
             StatusEffectInstanceEntry effectData = independent.getActiveEffectData(ModEffects.CAUTION_EFFECT.get());
 
             double amp = effectData.amplifier();
-            int stacks = effectData.stacks();
+            double knockbackRes = 0;
 
-            stats.setAddStat(StatType.KNOCKBACK_RES, stats.getAddStat(StatType.KNOCKBACK_RES) + 0.1 * stacks);
+
+            if (effectData.data().contains("knockback_res")) {
+             knockbackRes = effectData.data().getDouble("knockback_res");
+            }
+
+            stats.setAddStat(StatType.KNOCKBACK_RES, stats.getAddStat(StatType.KNOCKBACK_RES) + knockbackRes);
             stats.setAddStat(StatType.ARMOR, stats.getAddStat(StatType.ARMOR) + amp);
 
             dirty.setDirtyStat(StatType.KNOCKBACK_RES, true);
@@ -65,7 +83,6 @@ public class CautionEffect extends MobEffect implements ICustomStatusEffect {
 
     @Override
     public void onTick(LivingEntity entity) {
-        System.out.println("[DEBUG] Caution effect is ticking");
     }
 
     @Override
@@ -224,8 +241,14 @@ public class CautionEffect extends MobEffect implements ICustomStatusEffect {
 
             double amp = effectData.amplifier();
             int stacks = effectData.stacks();
+            double knockbackRes = 0;
 
-            stats.setAddStat(StatType.KNOCKBACK_RES, stats.getAddStat(StatType.KNOCKBACK_RES) - 0.1 * stacks);
+
+            if (effectData.data().contains("knockback_res")) {
+                knockbackRes = effectData.data().getDouble("knockback_res");
+            }
+
+            stats.setAddStat(StatType.KNOCKBACK_RES, stats.getAddStat(StatType.KNOCKBACK_RES) - knockbackRes);
             stats.setAddStat(StatType.ARMOR, stats.getAddStat(StatType.ARMOR) - amp);
 
             dirty.setDirtyStat(StatType.KNOCKBACK_RES, true);

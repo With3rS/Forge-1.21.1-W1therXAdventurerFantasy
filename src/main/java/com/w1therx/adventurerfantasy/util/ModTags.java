@@ -76,6 +76,8 @@ public class ModTags {
 
     public static final TagKey<MobEffect> GENERAL_NEUTRAL_EFFECT = MobEffects.createTag("general_neutral_effect");
 
+    public static final TagKey<MobEffect> ELEMENTAL_EFFECTS = MobEffects.createTag("elemental_effects");
+
 
 
 }

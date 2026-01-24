@@ -24,6 +24,11 @@ public class BlessingOfUndyingEffect extends MobEffect implements ICustomStatusE
     }
 
     @Override
+    public String effectDescription(LivingEntity entity) {
+        return "Grants immunity to damage.";
+    }
+
+    @Override
     public void onInitialisation(LivingEntity entity){
     }
 

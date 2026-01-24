@@ -37,7 +37,7 @@ public class WaterPrinciple extends Block {
             server.sendParticles(ParticleTypes.FALLING_DRIPSTONE_WATER, pPos.getX()+0.5, pPos.getY()+0.5, pPos.getZ()+0.5, 1, Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.5 + 0.1);
             server.sendParticles(ParticleTypes.FALLING_DRIPSTONE_WATER, pPos.getX()+0.5, pPos.getY()+0.5, pPos.getZ()+0.5, 1, Math.random() * 0.5, Math.random(), Math.random() * 0.5, Math.random() * 0.5 + 0.1);
             pLevel.playSound(null, pPos, SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS, 2.5F, 1.0F);
-            pPlayer.getServer().getPlayerList().broadcastSystemMessage(Component.literal("<Voice of Water> 'Seek pure and absolute balance and nothing will cloud your judgement.'").withStyle(Style.EMPTY.withColor(ElementType.WATER.getColor())), true);
+            pPlayer.getServer().getPlayerList().broadcastSystemMessage(Component.literal("<Voice of Water> 'As water seeks equilibrium, so too shall you; or else succumb in its dreadful deluge.'").withStyle(Style.EMPTY.withColor(ElementType.WATER.getColor())), true);
         }
         return InteractionResult.SUCCESS;
     }

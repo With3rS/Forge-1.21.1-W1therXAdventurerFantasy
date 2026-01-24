@@ -30,6 +30,11 @@ public class NecroticEffect extends MobEffect  implements ICustomStatusEffect {
     }
 
     @Override
+    public String effectDescription(LivingEntity entity) {
+        return "Triggers Decay-related elemental reactions when paired with certain other elemental effects.";
+    }
+
+    @Override
     public void onInitialisation(LivingEntity entity) {
         entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
             if (statsI.getActiveEffectList().containsKey(ModEffects.NECROTIC_EFFECT.get())) {

@@ -30,6 +30,11 @@ public class WetEffect extends MobEffect  implements ICustomStatusEffect {
     }
 
     @Override
+    public String effectDescription(LivingEntity entity) {
+        return "Triggers Water-related elemental reactions when paired with certain other elemental effects.";
+    }
+
+    @Override
     public void onInitialisation(LivingEntity entity) {
         entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
             if (statsI.getActiveEffectList().containsKey(ModEffects.WET_EFFECT.get())) {

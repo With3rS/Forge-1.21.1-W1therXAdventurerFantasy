@@ -8,6 +8,8 @@ import javax.annotation.Nullable;
 
 public interface ICustomStatusEffect {
 
+    String effectDescription(LivingEntity entity);
+
     void onInitialisation(LivingEntity entity);
 
     void onTick(LivingEntity entity);

@@ -29,6 +29,11 @@ public class ContaminatedEffect extends MobEffect implements ICustomStatusEffect
         return true;
     }
 
+    @Override
+    public String effectDescription(LivingEntity entity) {
+        return "Triggers Blight-related elemental reactions when paired with certain other elemental effects.";
+    }
+
 
     @Override
     public void onInitialisation(LivingEntity entity){

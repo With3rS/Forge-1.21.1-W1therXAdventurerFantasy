@@ -30,6 +30,11 @@ public class EmptiedEffect extends MobEffect implements ICustomStatusEffect {
         return true;
     }
 
+    @Override
+    public String effectDescription(LivingEntity entity) {
+        return "Triggers Void-related elemental reactions when paired with certain other elemental effects.";
+    }
+
 
     @Override
     public void onInitialisation(LivingEntity entity){

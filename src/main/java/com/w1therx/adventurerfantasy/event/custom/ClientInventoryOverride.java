@@ -1,6 +1,6 @@
 package com.w1therx.adventurerfantasy.event.custom;
 
-import com.w1therx.adventurerfantasy.screen.inventory.effects.EffectPanelScreen;
+import com.w1therx.adventurerfantasy.screen.inventory.effects.CustomInventoryScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraftforge.api.distmarker.Dist;
@@ -13,8 +13,8 @@ import net.minecraftforge.fml.common.Mod;
 public class ClientInventoryOverride {
     @SubscribeEvent
     public static void onOpenScreen(ScreenEvent.Opening event) {
-        if (event.getScreen() instanceof InventoryScreen inv && !(inv instanceof EffectPanelScreen)) {
-            event.setNewScreen(new EffectPanelScreen(Minecraft.getInstance().player));
+        if (event.getScreen() instanceof InventoryScreen inv && !(inv instanceof CustomInventoryScreen)) {
+            event.setNewScreen(new CustomInventoryScreen(Minecraft.getInstance().player));
         }
     }
 }

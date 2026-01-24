@@ -529,7 +529,7 @@ public class ModEvents {
 
             List<StatusEffectEntry> EffectList = independentAttackerStats.getEffectList();
             for (StatusEffectEntry entry : EffectList) {
-                MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent((LivingEntity) attacker, target, entry.effect(), entry.duration(), entry.baseChance(), entry.amplifier(), entry.stacks(), entry.maxStacks(), false));
+                MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent((LivingEntity) attacker, target, entry.effect(), entry.duration(), entry.baseChance(), entry.amplifier(), entry.stacks(), entry.maxStacks(), false, new CompoundTag()));
             }
         }
 
@@ -1061,7 +1061,7 @@ public class ModEvents {
 
         } else if ((elementType.getEffect() != null) && (elementType.getEffect().getKey() != null)) {
 
-            MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent((LivingEntity) attacker, target, elementType.getEffect().get(), 120, 1, 1, 0, 0, true));
+            MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent((LivingEntity) attacker, target, elementType.getEffect().get(), 120, 1, 1, 0, 0, true, new CompoundTag()));
         }
 
 
@@ -3015,7 +3015,7 @@ public class ModEvents {
                         }}
                 });
 
-                targetStatsI.addActiveEffectEntry(event.getEffect(), new StatusEffectInstanceEntry(event.getEffectDuration(), event.getEffectAmp(), event.getStacks(), event.getMaxStacks(), null, new CompoundTag(), false), target);
+                targetStatsI.addActiveEffectEntry(event.getEffect(), new StatusEffectInstanceEntry(event.getEffectDuration(), event.getEffectAmp(), event.getStacks(), event.getMaxStacks(), null, event.getData(), false), target);
             } else {
 
                 BuiltInRegistries.MOB_EFFECT.getResourceKey(effect).ifPresent(key -> {
@@ -3704,27 +3704,27 @@ public class ModEvents {
                                         System.out.print("");
 
                                         if (holder.is(ModTags.SPECIAL_NEUTRAL_EFFECT)) {
-                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_neutral_effect_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_neutral_effect_icon_background.png"), width - 12 * ix - 12, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
                                         } else if (holder.is(ModTags.SPECIAL_BUFFS)) {
-                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_buff_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_buff_icon_background.png"), width - 12 * ix - 12, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
                                         } else if (holder.is(ModTags.SPECIAL_DEBUFFS)) {
-                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_debuff_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/special_debuff_icon_background.png"), width - 12 * ix -12, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
                                         } else {
-                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/effect_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/effect_icon_background.png"), width - 12 * ix - 12, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
                                         }
 
                                         ResourceLocation effectImage = ModGeneralUtils.getEffectIcon(entry.getKey());
 
                                         if (resourceKey.location().getNamespace().equals("minecraft")) {
-                                            gui.blit(effectImage, width - 12 * ix + 2, 12 * (iy - 1) + 1 + 2, 0, 0, 18, 18, 18, 18);
+                                            gui.blit(effectImage, width - 12 * ix + 2 - 12, 12 * (iy - 1) + 1 + 2, 0, 0, 18, 18, 18, 18);
                                         } else {
-                                            gui.blit(effectImage, width - 12 * ix + 3, 12 * (iy - 1) + 1 + 3, 0, 0, 16, 16, 16, 16);
+                                            gui.blit(effectImage, width - 12 * ix + 3 - 12, 12 * (iy - 1) + 1 + 3, 0, 0, 16, 16, 16, 16);
                                         }
 
                                         if (holder.is(ModTags.DEBUFFS) || holder.is(ModTags.SPECIAL_DEBUFFS)) {
-                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/debuff_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/debuff_icon_background.png"), width - 12 * ix - 12, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
                                         } else if (holder.is(ModTags.BUFFS) || holder.is(ModTags.SPECIAL_BUFFS)) {
-                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/buff_icon_background.png"), width - 12 * ix, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
+                                            gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/mob_effect/buff_icon_background.png"), width - 12 * ix - 12, 12 * (iy - 1) + 1, 0, 0, 22, 22, 22, 22);
                                         }
 
                                         i = 1 + i;

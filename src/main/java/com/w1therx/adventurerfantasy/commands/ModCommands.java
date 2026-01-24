@@ -20,6 +20,7 @@ import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.effect.MobEffect;
@@ -1017,7 +1018,7 @@ public class ModCommands {
                                                             Holder<MobEffect> holder = holderOptional.get();
                                                             for (Entity entity : EntityArgument.getEntities(ctx, "target")) {
                                                                 if (entity instanceof LivingEntity living && (holder.is(ModTags.DEBUFFS) || holder.is(ModTags.BUFFS) || holder.is(ModTags.NEUTRAL_EFFECTS) || holder.is(ModTags.UNDISPELLABLE_EFFECTS) || holder.is(ModTags.EFFECTS_NOT_SHOWN_IN_GUI))) {
-                                                                    MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent(null, living, effect, 600, 1, 1, 1, 1, true));
+                                                                    MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent(null, living, effect, 600, 1, 1, 1, 1, true, new CompoundTag()));
                                                                     result.add(living);
                                                                 }
                                                             }
@@ -1062,7 +1063,7 @@ public class ModCommands {
                                                                                             Holder<MobEffect> holder = holderOptional.get();
                                                                                                 for (Entity entity : EntityArgument.getEntities(ctx, "target")) {
                                                                                                     if (entity instanceof LivingEntity living && (holder.is(ModTags.DEBUFFS) || holder.is(ModTags.BUFFS) || holder.is(ModTags.NEUTRAL_EFFECTS) || holder.is(ModTags.UNDISPELLABLE_EFFECTS) || holder.is(ModTags.EFFECTS_NOT_SHOWN_IN_GUI))) {
-                                                                                                        MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent(null, living, effect, duration, 1, amplifier, stacks, maxStacks, true));
+                                                                                                        MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent(null, living, effect, duration, 1, amplifier, stacks, maxStacks, true, new CompoundTag()));
                                                                                                         result.add(living);
                                                                                                     }
                                                                                                 }
@@ -1111,7 +1112,7 @@ public class ModCommands {
                                                                                                 System.out.println("Effect is supported");
                                                                                                 for (Entity entity : EntityArgument.getEntities(ctx, "target")) {
                                                                                                         if (entity instanceof LivingEntity living) {
-                                                                                                            MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent(null, living, effect, Integer.MAX_VALUE, 1, amplifier, stacks, maxStacks, true));
+                                                                                                            MinecraftForge.EVENT_BUS.post(new EffectApplicationEvent(null, living, effect, Integer.MAX_VALUE, 1, amplifier, stacks, maxStacks, true, new CompoundTag()));
                                                                                                             result.add(living);
                                                                                                         }
                                                                                                     }

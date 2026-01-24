@@ -29,6 +29,11 @@ public class BlightInfusionEffect extends MobEffect implements ICustomStatusEffe
     }
 
     @Override
+    public String effectDescription(LivingEntity entity) {
+        return "Converts damage dealt into Blight damage.";
+    }
+
+    @Override
     public void onInitialisation(LivingEntity entity){
         entity.getCapability(ModCapabilities.INDEPENDENT_STATS).ifPresent(statsI -> {
             statsI.setElementType(ElementType.BLIGHT);

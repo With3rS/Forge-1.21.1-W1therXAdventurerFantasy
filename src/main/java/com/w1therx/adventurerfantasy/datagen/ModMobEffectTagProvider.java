@@ -89,8 +89,7 @@ public class ModMobEffectTagProvider extends TagsProvider<MobEffect> {
                 .add(ModEffects.TRUE_INFUSION_EFFECT.getKey());
         tag(ModTags.UNDISPELLABLE_EFFECTS)
                 .add(ModEffects.CREATIVE_SHOCK_EFFECT.getKey())
-                .add(ModEffects.BLESSING_OF_UNDYING_EFFECT.getKey())
-                .add(ModEffects.TOTEM_WARD_EFFECT.getKey());
+                .add(ModEffects.BLESSING_OF_UNDYING_EFFECT.getKey());
         tag(ModTags.ELEMENTAL_INFUSION_EFFECT)
                 .add(ModEffects.BLIGHT_INFUSION_EFFECT.getKey())
                 .add(ModEffects.DECAY_INFUSION_EFFECT.getKey())
@@ -107,6 +106,21 @@ public class ModMobEffectTagProvider extends TagsProvider<MobEffect> {
                 .add(ModEffects.WATER_INFUSION_EFFECT.getKey())
                 .add(ModEffects.WIND_INFUSION_EFFECT.getKey())
                 .add(ModEffects.TRUE_INFUSION_EFFECT.getKey());
+        tag(ModTags.ELEMENTAL_EFFECTS)
+                .add(ModEffects.CONTAMINATED_EFFECT.getKey())
+                .add(ModEffects.NECROTIC_EFFECT.getKey())
+                .add(ModEffects.CRYSTALLIZED_EFFECT.getKey())
+                .add(ModEffects.RESONANT_EFFECT.getKey())
+                .add(ModEffects.BLAZING_EFFECT.getKey())
+                .add(ModEffects.FROSTED_EFFECT.getKey())
+                .add(ModEffects.ECSTATIC_EFFECT.getKey())
+                .add(ModEffects.MOLTEN_EFFECT.getKey())
+                .add(ModEffects.ELECTRIFIED_EFFECT.getKey())
+                .add(ModEffects.SEVERED_EFFECT.getKey())
+                .add(ModEffects.FLOURISHING_EFFECT.getKey())
+                .add(ModEffects.EMPTIED_EFFECT.getKey())
+                .add(ModEffects.WET_EFFECT.getKey())
+                .add(ModEffects.WHIRLING_EFFECT.getKey());
 
     }
 }

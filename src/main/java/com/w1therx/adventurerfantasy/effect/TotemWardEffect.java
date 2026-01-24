@@ -36,6 +36,11 @@ public class TotemWardEffect extends MobEffect implements ICustomStatusEffect {
     }
 
     @Override
+    public String effectDescription(LivingEntity entity) {
+        return "Allows to defy death once, restoring a certain amount of health and gaining a temporary shield and invulnerability.";
+    }
+
+    @Override
     public void onInitialisation(LivingEntity entity){
     }
 
