@@ -1,6 +1,6 @@
 package com.w1therx.adventurerfantasy.event.custom;
 
-import com.w1therx.adventurerfantasy.screen.inventory.effects.CustomInventoryScreen;
+import com.w1therx.adventurerfantasy.screen.inventory.custom.CustomInventoryScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraftforge.api.distmarker.Dist;

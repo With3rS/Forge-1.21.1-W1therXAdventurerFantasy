@@ -2077,10 +2077,10 @@ public class ModEvents {
             }
         });
 
-        if (stats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE) < finalStats.getFinalStat(StatType.DASH_COUNT)) {
+        if (stats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE) < finalStats.getFinalStat(StatType.MAX_DASHES)) {
         if (dashTime > 0) {
             stats.setIndependentStat(IndependentStatType.DASH_TIME, (int) (dashTime - 1));
-        } else if (stats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE) < (int) finalStats.getFinalStat(StatType.DASH_COUNT)) {
+        } else if (stats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE) < (int) finalStats.getFinalStat(StatType.MAX_DASHES)) {
             stats.setIndependentStat(IndependentStatType.DASHES_AVAILABLE, stats.getIndependentStat(IndependentStatType.DASHES_AVAILABLE) + 1);
             stats.setIndependentStat(IndependentStatType.DASH_TIME, (int) finalStats.getFinalStat(StatType.DASH_COOLDOWN));
         }} else {
@@ -2329,7 +2329,7 @@ public class ModEvents {
                 if ((stat == StatType.ATK_SPEED) || (stat == StatType.ATK_COOLDOWN)) {
                     double atkSpeed = (baseStats.getBaseStat(StatType.ATK_SPEED) + addStats.getAddStat(StatType.ATK_SPEED) * multStats.getMultStat(StatType.ATK_SPEED));
                     atkSpeed = Math.max(Math.min(atkSpeed, stat.getMaxValue()), stat.getMinValue());
-                    finalStats.setFinalStat(StatType.ATK_SPEED, atkSpeed);
+                    finalStats.setFinalStat(StatType.ATK_SPEED,atkSpeed);
                     double atkCooldown = (baseStats.getBaseStat(StatType.ATK_COOLDOWN) + addStats.getAddStat(StatType.ATK_COOLDOWN)) * multStats.getMultStat(StatType.ATK_COOLDOWN) / (1 + finalStats.getFinalStat(StatType.ATK_SPEED));
                     finalStats.setFinalStat(StatType.ATK_COOLDOWN, atkCooldown);
                     dirtyStats.setDirtyStat(StatType.ATK_SPEED, false);
@@ -2337,11 +2337,11 @@ public class ModEvents {
                 } else if (stat == StatType.ELEMENTAL_AFFINITY) {
                     double newStat = (baseStats.getBaseStat(stat) + addStats.getAddStat(stat)) * multStat;
                     newStat = Math.max(Math.min(newStat, stat.getMaxValue()), stat.getMinValue());
-                    newStat = Math.min(200, newStat);
+                    newStat = Math.min(1, newStat);
                     finalStats.setFinalStat(stat, newStat);
                     dirtyStats.setDirtyStat(stat, false);
-                    int reactionCooldown = (int) (40 - 19 * newStat);
-                    reactionCooldown = max(2, reactionCooldown);
+                    int reactionCooldown = (int) (40 - 39 * newStat);
+                    reactionCooldown = max(1, reactionCooldown);
 
                     independentStats.setIndependentStat(IndependentStatType.REACTION_COOLDOWN, reactionCooldown);
                 } else if (stat == StatType.MOVEMENT_SPEED) {
@@ -2356,7 +2356,7 @@ public class ModEvents {
                     double oldStat = finalStats.getFinalStat(StatType.MAX_HEALTH);
                 double newStat = (baseStats.getBaseStat(stat) + addStats.getAddStat(stat)) * multStat;
                     newStat = Math.max(Math.min(newStat, stat.getMaxValue()), stat.getMinValue());
-                finalStats.setFinalStat(stat, newStat);
+                finalStats.setFinalStat(stat,  newStat);
                 double newHP = independentStats.getIndependentStat(IndependentStatType.HEALTH)*newStat/oldStat;
                 independentStats.setIndependentStat(IndependentStatType.HEALTH, newHP);
                 dirtyStats.setDirtyStat(stat, false);
@@ -3562,7 +3562,7 @@ public class ModEvents {
                     } else {
 
                         int dashes = (int) statsI.getIndependentStat(IndependentStatType.DASHES_AVAILABLE);
-                        int maxDashes = (int) statsF.getFinalStat(StatType.DASH_COUNT);
+                        int maxDashes = (int) statsF.getFinalStat(StatType.MAX_DASHES);
                         double dashCooldownPerc = statsI.getIndependentStat(IndependentStatType.DASH_TIME) / statsF.getFinalStat(StatType.DASH_COOLDOWN);
 
                         gui.blit(ResourceLocation.fromNamespaceAndPath("adventurerfantasy", "textures/gui/hud/dash_display.png"), width/2 + 94, height - 20, 0 ,0, 18, 18, 18, 18);

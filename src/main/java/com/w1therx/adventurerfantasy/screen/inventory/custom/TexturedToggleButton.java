@@ -1,4 +1,4 @@
-package com.w1therx.adventurerfantasy.screen.inventory.effects;
+package com.w1therx.adventurerfantasy.screen.inventory.custom;
 
 import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.components.WidgetSprites;

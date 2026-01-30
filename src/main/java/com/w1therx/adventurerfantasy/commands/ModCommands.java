@@ -6,10 +6,7 @@ import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import com.w1therx.adventurerfantasy.capability.IAddStats;
-import com.w1therx.adventurerfantasy.capability.IDirtyStats;
-import com.w1therx.adventurerfantasy.capability.IMultStats;
-import com.w1therx.adventurerfantasy.capability.ModCapabilities;
+import com.w1therx.adventurerfantasy.capability.*;
 import com.w1therx.adventurerfantasy.common.enums.IndependentStatType;
 import com.w1therx.adventurerfantasy.common.enums.StatType;
 import com.w1therx.adventurerfantasy.event.custom.*;
@@ -350,6 +347,78 @@ public class ModCommands {
 
         dispatcher.register(Commands.literal("stat")
                 .requires(source -> source.hasPermission(2))
+                        .then(Commands.literal("check")
+                                .then(Commands.argument("target", EntityArgument.entity())
+                                .executes(ctx -> {
+                                    CommandSourceStack source = ctx.getSource();
+                                    Entity entity = EntityArgument.getEntity(ctx, "target");
+                                    if (entity instanceof LivingEntity living) {
+                                        LazyOptional<IMultStats> optionalM = living.getCapability(ModCapabilities.MULT_STATS);
+                                        LazyOptional<IAddStats> optionalA = living.getCapability(ModCapabilities.ADD_STATS);
+                                        LazyOptional<IBaseStats> optionalB = living.getCapability(ModCapabilities.BASE_STATS);
+                                        LazyOptional<IFinalStats> optionalF = living.getCapability(ModCapabilities.FINAL_STATS);
+                                        if (optionalF.isPresent() && optionalB.isPresent() && optionalA.isPresent() && optionalM.isPresent()) {
+                                            IFinalStats statsF = optionalF.orElseThrow(()-> new IllegalStateException("Failed an impossible-to-fail capability check"));
+                                            IBaseStats statsB = optionalB.orElseThrow(()-> new IllegalStateException("Failed an impossible-to-fail capability check"));
+                                            IAddStats statsA = optionalA.orElseThrow(()-> new IllegalStateException("Failed an impossible-to-fail capability check"));
+                                            IMultStats statsM = optionalM.orElseThrow(()-> new IllegalStateException("Failed an impossible-to-fail capability check"));
+                                            StringBuilder builder = new StringBuilder();
+                                            for (StatType stat : StatType.values()) {
+                                                builder.append("Stat: ").append(stat.name().toLowerCase()).append(", Base: ").append(statsB.getBaseStat(stat)).append(", Additive: ").append(statsA.getAddStat(stat)).append(", Multiplicative: ").append(statsM.getMultStat(stat)).append(", Final: ").append(statsF.getFinalStat(stat)).append(". ");
+                                            }
+                                            source.sendSuccess(() -> Component.literal(builder.toString()), true);
+                                            return 1;
+                                        } else {
+                                            source.sendFailure(Component.literal("The targeted entity doesn't have the necessary capabilities to complete the operation."));
+                                            return 0;
+                                        }
+                                    } else {
+                                        source.sendFailure(Component.literal("The targeted entity is not alive"));
+                                        return 0;
+                                    }
+                                })
+                                .then(Commands.argument("stat_type", StringArgumentType.word())
+                                        .suggests((ctx, builder) -> {
+                                            StatType[] statList = StatType.values();
+
+                                            for (StatType stat : Arrays.stream(statList).toList()) {
+                                                builder.suggest(stat.name().toLowerCase());
+                                            }
+                                            return builder.buildFuture();
+                                        }).executes(ctx -> {
+                                            CommandSourceStack source = ctx.getSource();
+                                            String statName = StringArgumentType.getString(ctx, "stat_type");
+                                            try {
+                                                StatType stat = StatType.valueOf(statName.toUpperCase());
+                                                Entity entity = EntityArgument.getEntity(ctx, "target");
+                                                if (entity instanceof LivingEntity living) {
+                                                    LazyOptional<IMultStats> optionalM = living.getCapability(ModCapabilities.MULT_STATS);
+                                                    LazyOptional<IAddStats> optionalA = living.getCapability(ModCapabilities.ADD_STATS);
+                                                    LazyOptional<IBaseStats> optionalB = living.getCapability(ModCapabilities.BASE_STATS);
+                                                    LazyOptional<IFinalStats> optionalF = living.getCapability(ModCapabilities.FINAL_STATS);
+                                                    if (optionalF.isPresent() && optionalB.isPresent() && optionalA.isPresent() && optionalM.isPresent()) {
+                                                        IFinalStats statsF = optionalF.orElseThrow(() -> new IllegalStateException("Failed an impossible-to-fail capability check"));
+                                                        IBaseStats statsB = optionalB.orElseThrow(() -> new IllegalStateException("Failed an impossible-to-fail capability check"));
+                                                        IAddStats statsA = optionalA.orElseThrow(() -> new IllegalStateException("Failed an impossible-to-fail capability check"));
+                                                        IMultStats statsM = optionalM.orElseThrow(() -> new IllegalStateException("Failed an impossible-to-fail capability check"));
+                                                        String string = "Stat: " + stat.name().toLowerCase() + ", Base: " + statsB.getBaseStat(stat) + ", Additive: " + statsA.getAddStat(stat) + ", Multiplicative: " + statsM.getMultStat(stat) + ", Final: " + statsF.getFinalStat(stat) + ". ";
+
+                                                        source.sendSuccess(() -> Component.literal(string), true);
+                                                        return 1;
+                                                    } else {
+                                                        source.sendFailure(Component.literal("The targeted entity doesn't have the necessary capabilities to complete the operation."));
+                                                        return 0;
+                                                    }
+                                                } else {
+                                                    source.sendFailure(Component.literal("The targeted entity is not alive"));
+                                                    return 0;
+                                                }
+                                            }
+                                             catch (IllegalArgumentException e) {
+                                                source.sendFailure(Component.literal("Unknown stat: " + statName));
+                                                return 0;
+                                            }
+                                        }))))
                 .then(Commands.literal("multiplicative")
                         .then(Commands.literal("set")
                                 .then(Commands.argument("stat_type", StringArgumentType.word())

@@ -1,4 +1,4 @@
-package com.w1therx.adventurerfantasy.screen.inventory.effects;
+package com.w1therx.adventurerfantasy.screen.inventory.custom;
 
 
 import com.w1therx.adventurerfantasy.effect.general.ICustomStatusEffect;
@@ -80,7 +80,7 @@ public class EffectPanelComponent {
     public void onTick() {
         scrollOffset = scrollOffset + scrollSpeed/20;
         clampScroll();
-        scrollSpeed = scrollSpeed * 0.9;
+        scrollSpeed = scrollSpeed * 0.89;
     }
 
     public void click(int mouseX, int mouseY, int button) {
@@ -189,7 +189,7 @@ public class EffectPanelComponent {
     }
 
     private boolean isHovered(int x, int y, int mouseX, int mouseY) {
-        return (mouseX >= x && mouseX <= x + ICON_SIZE && mouseY >= y && mouseY <= y + ICON_SIZE);
+        return (mouseX >= x && mouseX <= x + ICON_SIZE && mouseY >= y && mouseY <= y + ICON_SIZE && mouseX>= left + 24 && mouseX <= left + 144 && mouseY>= top + 8 && mouseY <= top + 8 + 144);
     }
 
     private List<Component> buildTooltip(MobEffect effect, Player player) {

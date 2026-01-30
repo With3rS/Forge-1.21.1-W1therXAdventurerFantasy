@@ -1,7 +1,6 @@
 package com.w1therx.adventurerfantasy.network.packet;
 
 import com.w1therx.adventurerfantasy.capability.ModCapabilities;
-import com.w1therx.adventurerfantasy.screen.inventory.effects.EffectPanelComponent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
